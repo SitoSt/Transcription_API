@@ -6,5 +6,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Boost REQUIRED)
 
-add_executable(mi_api src/server.cpp)
+add_executable(mi_api 
+    src/server.cpp
+    src/WhisperWrapper.cpp
+)
+target_link_directories(mi_api PRIVATE
+    src
+    src/whisper
+)
 target_link_libraries(mi_api PRIVATE Boost::boost pthread)

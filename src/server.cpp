@@ -4,6 +4,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include "WhisperWrapper.h"
 
 using tcp = boost::asio::ip::tcp;
 namespace websocket = boost::beast::websocket;
@@ -13,6 +14,8 @@ namespace websocket = boost::beast::websocket;
 // Sustituye esta función por tu implementación real
 // ---------------------------------------------------------------------------
 std::string transcribeAudio(const std::vector<uint8_t>& data) {
+    WhisperWrapper* ww = WhisperWrapper::instance("../models/ggml-medium.bin", "../bin/whisper-cli");
+    ww.transcribe()
     return "Transcripción generada, bro. (" + std::to_string(data.size()) + " bytes recibidos)";
 }
 
@@ -61,6 +64,7 @@ void do_session(tcp::socket socket) {
 // ---------------------------------------------------------------------------
 int main() {
     try {
+
         boost::asio::io_context ioc;
 
         tcp::acceptor acceptor(ioc, tcp::endpoint(tcp::v4(), 9001));
