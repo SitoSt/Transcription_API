@@ -22,6 +22,32 @@ cd build/tests
 ./test_simple_vad          # 15 tests
 ```
 
+### Instalación en Ubuntu/Linux
+
+Si estás en un servidor Ubuntu, primero instala las dependencias:
+
+```bash
+# Dependencias básicas
+sudo apt update
+sudo apt install -y build-essential cmake git
+
+# Opcional: OpenBLAS para mejor rendimiento en CPU
+sudo apt install -y libopenblas-dev
+
+# Opcional: CUDA para aceleración GPU (si tienes NVIDIA)
+# sudo apt install -y nvidia-cuda-toolkit
+```
+
+Luego compila normalmente:
+```bash
+git clone --recursive https://github.com/tu-usuario/transcription.git
+cd transcription
+cmake -B build -DBUILD_TESTS=ON
+cmake --build build -j$(nproc)
+./run_tests.sh
+```
+
+
 ## 📁 Estructura del Proyecto
 
 ```
@@ -119,14 +145,19 @@ if (!is_speech) {
 ## 🔧 Requisitos
 
 - CMake 3.16+
-- C++17
-- macOS con Apple Silicon (o adaptar para otras plataformas)
+- C++17 compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
+- Sistema operativo: **Linux** (Ubuntu, Debian, etc.), macOS, o Windows
+
+> **Nota**: Este proyecto es **multiplataforma** y está diseñado para funcionar en servidores Ubuntu/Linux. Los tests se han ejecutado en macOS con Apple Silicon, pero whisper.cpp soporta todas las plataformas.
 
 ## 📦 Dependencias
 
 - **whisper.cpp**: Submódulo Git (se descarga automáticamente)
+  - En Linux: usa CPU, OpenBLAS, o CUDA (GPU NVIDIA)
+  - En macOS: usa Metal (Apple Silicon) o Accelerate Framework
+  - En Windows: usa CPU o CUDA
 - **Google Test**: Se descarga automáticamente vía FetchContent
-- **Boost**: Para el servidor WebSocket (próximamente)
+- **Boost** (opcional): Para el servidor WebSocket (próximamente)
 
 ## 🎯 Estado del Proyecto
 
