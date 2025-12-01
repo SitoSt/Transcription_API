@@ -15,7 +15,7 @@ echo -e "${BLUE}🧪 Ejecutando tests del proyecto...${NC}\n"
 cd "$(dirname "$0")"
 
 # Compilar si es necesario
-if [ ! -f "build/tests/test_streaming_whisper" ] || [ ! -f "build/tests/test_simple_vad" ]; then
+if [ ! -f "build/tests/test_streaming_whisper" ]; then
     echo -e "${BLUE}📦 Compilando proyecto...${NC}"
     cmake -B build -DBUILD_TESTS=ON
     cmake --build build -j
@@ -26,8 +26,5 @@ cd build/tests
 
 echo -e "${YELLOW}▶ Tests de StreamingWhisperEngine${NC}"
 ./test_streaming_whisper "$@"
-
-echo -e "\n${YELLOW}▶ Tests de SimpleVAD${NC}"
-./test_simple_vad "$@"
 
 echo -e "\n${GREEN}✅ Todos los tests completados${NC}"

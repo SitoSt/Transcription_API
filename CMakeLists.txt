@@ -13,6 +13,14 @@ add_subdirectory(third_party/whisper.cpp)
 # Encontrar dependencias
 find_package(Boost REQUIRED)
 
+# Agregar nlohmann/json para protocolo JSON
+include(FetchContent)
+FetchContent_Declare(json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.11.3
+)
+FetchContent_MakeAvailable(json)
+
 # Librería StreamingWhisperEngine
 add_library(streaming_whisper
     src/whisper/StreamingWhisperEngine.cpp
@@ -27,30 +35,24 @@ target_link_libraries(streaming_whisper PUBLIC
     whisper
 )
 
-# Librería SimpleVAD
-add_library(simple_vad
-    src/audio/SimpleVAD.cpp
+
+
+# Servidor principal de streaming
+add_executable(transcription_server
+    src/server.cpp
+    src/server/StreamingSession.cpp
 )
 
-target_include_directories(simple_vad PUBLIC
+target_include_directories(transcription_server PRIVATE
     ${CMAKE_SOURCE_DIR}/src
 )
 
-# Servidor principal (comentado por ahora, lo actualizaremos después)
-# add_executable(transcription_server
-#     src/server.cpp
-# )
-# 
-# target_include_directories(transcription_server PRIVATE
-#     src
-# )
-# 
-# target_link_libraries(transcription_server PRIVATE 
-#     Boost::boost 
-#     pthread
-#     streaming_whisper
-#     simple_vad
-# )
+target_link_libraries(transcription_server PRIVATE 
+    Boost::boost 
+    pthread
+    streaming_whisper
+    nlohmann_json::nlohmann_json
+)
 
 # Tests
 if(BUILD_TESTS)

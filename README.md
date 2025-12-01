@@ -19,8 +19,31 @@ O manualmente:
 ```bash
 cd build/tests
 ./test_streaming_whisper  # 13 tests
-./test_simple_vad          # 15 tests
 ```
+
+### Ejecutar el servidor
+
+```bash
+# Desde el directorio raíz
+./build/transcription_server
+
+# O especificar ruta del modelo
+./build/transcription_server /path/to/model.bin
+```
+
+El servidor escuchará en `ws://localhost:9001`
+
+### Probar con cliente Python
+
+```bash
+# Instalar dependencias
+pip install websockets
+
+# Ejecutar cliente de prueba
+python clients/test_client.py test_audio.wav
+```
+
+Ver [clients/README.md](clients/README.md) para más detalles.
 
 ### Instalación en Ubuntu/Linux
 
@@ -53,15 +76,15 @@ cmake --build build -j$(nproc)
 ```
 transcription/
 ├── src/
+│   ├── server/
+│   │   ├── StreamingSession.h          # Sesión WebSocket
+│   │   └── StreamingSession.cpp
 │   ├── whisper/
 │   │   ├── StreamingWhisperEngine.h    # Motor de transcripción
 │   │   └── StreamingWhisperEngine.cpp
-│   └── audio/
-│       ├── SimpleVAD.h                 # Detección de voz
-│       └── SimpleVAD.cpp
+│   └── server.cpp                      # Punto de entrada del servidor
 ├── tests/
 │   ├── test_streaming_whisper.cpp      # 13 tests unitarios
-│   ├── test_simple_vad.cpp             # 15 tests unitarios
 │   └── CMakeLists.txt
 ├── third_party/
 │   └── whisper.cpp/                    # Submódulo Git
@@ -73,7 +96,7 @@ transcription/
 
 ## 🧪 Tests
 
-El proyecto incluye **28 tests unitarios** que cubren:
+El proyecto incluye **13 tests unitarios** que cubren:
 
 ### StreamingWhisperEngine (13 tests)
 - ✅ Carga de modelos
@@ -82,17 +105,9 @@ El proyecto incluye **28 tests unitarios** que cubren:
 - ✅ Thread-safety
 - ✅ Transcripción con diferentes tipos de audio
 
-### SimpleVAD (15 tests)
-- ✅ Detección de silencio y voz
-- ✅ Cálculo de energía RMS
-- ✅ Zero Crossing Rate (ZCR)
-- ✅ Transiciones de estado
-- ✅ Histéresis (anti-flapping)
-- ✅ Configuración de umbrales
-
-**Ejecutar tests específicos**:
+**Ejecutar tests**:
 ```bash
-./run_tests.sh --gtest_filter=SimpleVADTest.Hysteresis
+./run_tests.sh
 ```
 
 ## 📝 Uso
@@ -118,29 +133,7 @@ std::string transcription = engine.transcribe();
 engine.reset();
 ```
 
-### SimpleVAD
 
-```cpp
-#include "audio/SimpleVAD.h"
-
-// Crear detector con umbrales personalizados
-SimpleVAD vad(
-    0.02f,  // Umbral de energía
-    3,      // Frames mínimos de voz
-    20      // Frames mínimos de silencio
-);
-
-// Procesar chunks de audio
-std::vector<float> audio_chunk = /* ... */;
-bool is_speech = vad.isSpeech(audio_chunk);
-
-if (!is_speech) {
-    // Silencio detectado → transcribir buffer acumulado
-    std::string text = engine.transcribe();
-    engine.reset();
-    vad.reset();
-}
-```
 
 ## 🔧 Requisitos
 
@@ -157,15 +150,34 @@ if (!is_speech) {
   - En macOS: usa Metal (Apple Silicon) o Accelerate Framework
   - En Windows: usa CPU o CUDA
 - **Google Test**: Se descarga automáticamente vía FetchContent
-- **Boost** (opcional): Para el servidor WebSocket (próximamente)
+- **Boost**: Para el servidor WebSocket (Beast & ASIO)
 
 ## 🎯 Estado del Proyecto
 
 - [x] Integración de whisper.cpp
-- [x] StreamingWhisperEngine con tests
-- [x] VAD (Voice Activity Detection) con tests
-- [ ] Servidor WebSocket con streaming
-- [ ] Clientes de prueba (Python/Web)
+- [x] StreamingWhisperEngine con tests (13 tests)
+- [x] Servidor WebSocket con streaming (Protocolo Mixto Text/Binary)
+- [x] Cliente Python de prueba
+- [ ] Cliente Web (HTML/JavaScript)
+- [ ] Optimizaciones de rendimiento
+
+**Total**: 13 tests unitarios pasando ✅
+
+## 📡 Protocolo WebSocket
+
+El servidor utiliza un protocolo mixto para optimizar la latencia:
+
+1.  **Configuración (Texto/JSON)**:
+    - Cliente envía: `{"type": "config", "language": "es"}`
+    - Servidor responde: `{"type": "ready", ...}`
+
+2.  **Audio (Binario)**:
+    - Cliente envía: Datos crudos PCM (Float32, 16kHz, Mono).
+    - Servidor acumula el audio sin responder inmediatamente.
+
+3.  **Finalización (Texto/JSON)**:
+    - Cliente envía: `{"type": "end"}` (cuando detecta silencio/fin de frase).
+    - Servidor procesa todo el audio acumulado y responde: `{"type": "transcription", "text": "...", "is_final": true}`.
 
 ## 📖 Documentación
 
