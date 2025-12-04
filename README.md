@@ -1,184 +1,94 @@
-# Microservicio de Transcripción en Streaming - C++
+# Real-Time C++ Transcription Microservice
 
-Sistema de transcripción de audio en tiempo real usando whisper.cpp y WebSocket.
+A high-performance, real-time audio transcription microservice built with C++ and [whisper.cpp](https://github.com/ggerganov/whisper.cpp). Designed for low-latency streaming applications, it processes raw audio via WebSocket and delivers accurate text transcriptions using OpenAI's Whisper models.
 
-## 🚀 Quick Start
+## 🚀 Features
 
-### Compilar el proyecto
+- **Real-Time Streaming**: Processes audio chunks as they arrive with minimal latency.
+- **WebSocket Protocol**: Efficient, bidirectional communication for audio streaming and control.
+- **High Performance**: Built on C++17 and optimized for both CPU (OpenBLAS) and GPU (CUDA/Metal).
+- **Thread-Safe Architecture**: Robust circular buffer management and multi-threaded processing.
+- **VAD (Voice Activity Detection)**: (Planned) Integrated voice activity detection for optimized processing.
+- **Cross-Platform**: Runs on Linux (Ubuntu), macOS (Apple Silicon optimized), and Windows.
+
+## 🏗️ Architecture
+
+The system is composed of two main components:
+
+1.  **StreamingSession**: Handles WebSocket connections, protocol parsing (JSON config/control), and binary audio reception.
+2.  **StreamingWhisperEngine**: The core transcription engine. It manages a thread-safe circular buffer to handle incoming audio streams asynchronously and interfaces with `whisper.cpp` for inference.
+
+## 🛠️ Getting Started
+
+### Prerequisites
+
+- **CMake** 3.16+
+- **C++ Compiler** (GCC 7+, Clang 5+, MSVC 2017+)
+- **Git**
+
+### Build Instructions
+
+1.  **Clone the repository**:
+    ```bash
+    git clone --recursive https://github.com/your-username/transcription-service.git
+    cd transcription-service
+    ```
+
+2.  **Compile**:
+    ```bash
+    cmake -B build -DBUILD_TESTS=ON
+    cmake --build build -j$(nproc)
+    ```
+
+3.  **Run Tests** (Optional but recommended):
+    ```bash
+    ./run_tests.sh
+    ```
+
+### Running the Server
+
+Start the server listening on port `9001`:
+
 ```bash
-cmake -B build -DBUILD_TESTS=ON
-cmake --build build -j
+./build/transcription_server /path/to/ggml-model.bin
 ```
 
-### Ejecutar tests
+*Note: You can download models from the [whisper.cpp repository](https://github.com/ggerganov/whisper.cpp).*
+
+## 📡 WebSocket Protocol
+
+The service uses a mixed Text/Binary protocol:
+
+1.  **Configuration** (JSON):
+    *   Client -> Server: `{"type": "config", "language": "en"}`
+    *   Server -> Client: `{"type": "ready"}`
+
+2.  **Audio Streaming** (Binary):
+    *   Client -> Server: Raw PCM Audio Data (Float32, 16kHz, Mono).
+    *   The server buffers this data efficiently.
+
+3.  **Transcription** (JSON):
+    *   Client -> Server: `{"type": "end"}` (Signals end of utterance/stream)
+    *   Server -> Client: `{"type": "transcription", "text": "Hello world", "is_final": true}`
+
+## 🧪 Testing
+
+The project maintains high code quality with a suite of 13 unit tests covering:
+- Model loading and initialization.
+- Circular buffer logic and thread safety.
+- Audio format conversion.
+- Transcription accuracy.
+
+Run them with:
 ```bash
-./run_tests.sh
+cd build/tests && ./test_streaming_whisper
 ```
 
-O manualmente:
-```bash
-cd build/tests
-./test_streaming_whisper  # 13 tests
-```
+## 📦 Dependencies
 
-### Ejecutar el servidor
+- **whisper.cpp**: Core inference engine.
+- **Boost.Beast & Boost.ASIO**: WebSocket and networking.
+- **Google Test**: Unit testing framework.
 
-```bash
-# Desde el directorio raíz
-./build/transcription_server
-
-# O especificar ruta del modelo
-./build/transcription_server /path/to/model.bin
-```
-
-El servidor escuchará en `ws://localhost:9001`
-
-### Probar con cliente Python
-
-```bash
-# Instalar dependencias
-pip install websockets
-
-# Ejecutar cliente de prueba
-python clients/test_client.py test_audio.wav
-```
-
-Ver [clients/README.md](clients/README.md) para más detalles.
-
-### Instalación en Ubuntu/Linux
-
-Si estás en un servidor Ubuntu, primero instala las dependencias:
-
-```bash
-# Dependencias básicas
-sudo apt update
-sudo apt install -y build-essential cmake git
-
-# Opcional: OpenBLAS para mejor rendimiento en CPU
-sudo apt install -y libopenblas-dev
-
-# Opcional: CUDA para aceleración GPU (si tienes NVIDIA)
-# sudo apt install -y nvidia-cuda-toolkit
-```
-
-Luego compila normalmente:
-```bash
-git clone --recursive https://github.com/tu-usuario/transcription.git
-cd transcription
-cmake -B build -DBUILD_TESTS=ON
-cmake --build build -j$(nproc)
-./run_tests.sh
-```
-
-
-## 📁 Estructura del Proyecto
-
-```
-transcription/
-├── src/
-│   ├── server/
-│   │   ├── StreamingSession.h          # Sesión WebSocket
-│   │   └── StreamingSession.cpp
-│   ├── whisper/
-│   │   ├── StreamingWhisperEngine.h    # Motor de transcripción
-│   │   └── StreamingWhisperEngine.cpp
-│   └── server.cpp                      # Punto de entrada del servidor
-├── tests/
-│   ├── test_streaming_whisper.cpp      # 13 tests unitarios
-│   └── CMakeLists.txt
-├── third_party/
-│   └── whisper.cpp/                    # Submódulo Git
-│       └── models/ggml-base.bin        # Modelo de prueba
-├── CMakeLists.txt
-├── run_tests.sh                        # Script helper
-└── README.md
-```
-
-## 🧪 Tests
-
-El proyecto incluye **13 tests unitarios** que cubren:
-
-### StreamingWhisperEngine (13 tests)
-- ✅ Carga de modelos
-- ✅ Gestión de buffer circular
-- ✅ Conversión de formatos de audio
-- ✅ Thread-safety
-- ✅ Transcripción con diferentes tipos de audio
-
-**Ejecutar tests**:
-```bash
-./run_tests.sh
-```
-
-## 📝 Uso
-
-### StreamingWhisperEngine
-
-```cpp
-#include "whisper/StreamingWhisperEngine.h"
-
-// Crear motor con modelo
-StreamingWhisperEngine engine("path/to/model.bin");
-engine.setLanguage("es");
-engine.setThreads(4);
-
-// Procesar chunks de audio (PCM float32, 16kHz mono)
-std::vector<float> audio_chunk = /* ... */;
-engine.processAudioChunk(audio_chunk);
-
-// Transcribir cuando sea necesario
-std::string transcription = engine.transcribe();
-
-// Limpiar buffer
-engine.reset();
-```
-
-
-
-## 🔧 Requisitos
-
-- CMake 3.16+
-- C++17 compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
-- Sistema operativo: **Linux** (Ubuntu, Debian, etc.), macOS, o Windows
-
-> **Nota**: Este proyecto es **multiplataforma** y está diseñado para funcionar en servidores Ubuntu/Linux. Los tests se han ejecutado en macOS con Apple Silicon, pero whisper.cpp soporta todas las plataformas.
-
-## 📦 Dependencias
-
-- **whisper.cpp**: Submódulo Git (se descarga automáticamente)
-  - En Linux: usa CPU, OpenBLAS, o CUDA (GPU NVIDIA)
-  - En macOS: usa Metal (Apple Silicon) o Accelerate Framework
-  - En Windows: usa CPU o CUDA
-- **Google Test**: Se descarga automáticamente vía FetchContent
-- **Boost**: Para el servidor WebSocket (Beast & ASIO)
-
-## 🎯 Estado del Proyecto
-
-- [x] Integración de whisper.cpp
-- [x] StreamingWhisperEngine con tests (13 tests)
-- [x] Servidor WebSocket con streaming (Protocolo Mixto Text/Binary)
-- [x] Cliente Python de prueba
-- [ ] Cliente Web (HTML/JavaScript)
-- [ ] Optimizaciones de rendimiento
-
-**Total**: 13 tests unitarios pasando ✅
-
-## 📡 Protocolo WebSocket
-
-El servidor utiliza un protocolo mixto para optimizar la latencia:
-
-1.  **Configuración (Texto/JSON)**:
-    - Cliente envía: `{"type": "config", "language": "es"}`
-    - Servidor responde: `{"type": "ready", ...}`
-
-2.  **Audio (Binario)**:
-    - Cliente envía: Datos crudos PCM (Float32, 16kHz, Mono).
-    - Servidor acumula el audio sin responder inmediatamente.
-
-3.  **Finalización (Texto/JSON)**:
-    - Cliente envía: `{"type": "end"}` (cuando detecta silencio/fin de frase).
-    - Servidor procesa todo el audio acumulado y responde: `{"type": "transcription", "text": "...", "is_final": true}`.
-
-## 📖 Documentación
-
-Ver [walkthrough.md](.gemini/antigravity/brain/3602ab02-543c-46e5-a974-b8e7b3e54d82/walkthrough.md) para detalles de implementación.
+---
+*Built by Sito. Open for opportunities.*
