@@ -45,7 +45,7 @@ public:
 private:
     // Handlers de mensajes
     void handleJsonMessage(const std::string& message);
-    void handleBinaryMessage(const beast::flat_buffer& buffer);
+    void handleBinaryMessage(const std::vector<unsigned char>& data);
     
     void handleConfig(const json& msg);
     void handleEnd();
@@ -68,6 +68,7 @@ private:
     std::string session_id_;
     std::string model_path_;
     bool configured_;
+    size_t last_transcribed_size_;
     
     // Configuración
     std::string language_;

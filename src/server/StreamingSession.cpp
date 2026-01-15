@@ -13,6 +13,7 @@ StreamingSession::StreamingSession(
     : ws_(std::move(ws)),
       model_path_(model_path),
       configured_(false),
+      last_transcribed_size_(0),
       language_("es")
 {
     session_id_ = generateSessionId();
@@ -31,29 +32,28 @@ void StreamingSession::run() {
             ws_.read(buffer);
             
             if (ws_.got_text()) {
-                // Convertir buffer a string
                 std::string message(
                     boost::asio::buffers_begin(buffer.data()),
                     boost::asio::buffers_end(buffer.data())
                 );
                 handleJsonMessage(message);
             } else {
-                // Procesar mensaje binario (audio)
-                handleBinaryMessage(buffer);
+                // Binary data - Audio
+                // Copiar datos del buffer
+                std::vector<unsigned char> data(buffer.size());
+                boost::asio::buffer_copy(boost::asio::buffer(data), buffer.data());
+                
+                handleBinaryMessage(data);
             }
         }
     }
     catch (beast::system_error const& se) {
-        if (se.code() != websocket::error::closed) {
-            std::cerr << "[Session " << session_id_ << "] Error: " << se.what() << std::endl;
-        }
+        if (se.code() != websocket::error::closed)
+            std::cerr << "Error: " << se.code().message() << std::endl;
     }
     catch (std::exception const& e) {
-        std::cerr << "[Session " << session_id_ << "] Exception: " << e.what() << std::endl;
-        sendError(e.what(), "INTERNAL_ERROR");
+        std::cerr << "Error: " << e.what() << std::endl;
     }
-    
-    std::cout << "[Session " << session_id_ << "] Closed" << std::endl;
 }
 
 void StreamingSession::handleJsonMessage(const std::string& message) {
@@ -86,41 +86,27 @@ void StreamingSession::handleJsonMessage(const std::string& message) {
     }
 }
 
-void StreamingSession::handleBinaryMessage(const beast::flat_buffer& buffer) {
+void StreamingSession::handleBinaryMessage(const std::vector<unsigned char>& data) {
     if (!configured_) {
         sendError("Session not configured. Send 'config' first.", "NOT_CONFIGURED");
         return;
     }
 
     try {
-        // Asumimos que los datos son float32 little-endian
-        auto data = buffer.data();
-        size_t size = buffer.size();
+        std::cout << "[Session " << session_id_ << "] Received " << data.size() << " bytes of audio" << std::endl;
         
-        if (size % sizeof(float) != 0) {
-            // TODO: Si no es múltiplo de float, algo anda mal, pero intentamos procesar lo que se pueda
-            // o simplemente ignoramos el resto.
-        }
-        
-        size_t num_samples = size / sizeof(float);
-        std::vector<float> audio(num_samples);
-        
-        // Copiar datos del buffer a vector<float>
-        // boost::asio::buffer_copy podría usarse, o memcpy si es contiguo.
-        // beast::flat_buffer garantiza contiguidad? No necesariamente.
-        // Usamos buffers_begin/end para iterar o copiar.
-        
-        // Forma segura de copiar desde sequence de buffers:
-        net::buffer_copy(
-            net::buffer(audio.data(), audio.size() * sizeof(float)),
-            data
-        );
-        
-        if (audio.empty()) {
+        // Convertir de unsigned char a float
+        // Asumimos que los datos llegan en bytes, que son float32 little-endian
+        if (data.size() % sizeof(float) != 0) {
+            std::cerr << "Invalid audio data size: " << data.size() << std::endl;
             return;
         }
+
+        auto data_ptr = reinterpret_cast<const float*>(data.data());
+        size_t size = data.size() / sizeof(float);
+        std::vector<float> pcm(data_ptr, data_ptr + size);
         
-        processAudioChunk(audio);
+        processAudioChunk(pcm);
     }
     catch (std::exception& e) {
         sendError("Binary audio processing failed: " + std::string(e.what()), "AUDIO_ERROR");
@@ -140,6 +126,7 @@ void StreamingSession::handleConfig(const json& msg) {
         engine_->setThreads(4);
         
         configured_ = true;
+        last_transcribed_size_ = 0;
         
         std::cout << "[Session " << session_id_ << "] Configured: lang=" << language_ << std::endl;
         
@@ -152,24 +139,20 @@ void StreamingSession::handleConfig(const json& msg) {
 }
 
 
-
 void StreamingSession::handleEnd() {
-    // Transcribir cualquier audio restante
-    if (engine_ && engine_->getBufferSize() > 0) {
-        try {
-            std::cout << "[Session " << session_id_ << "] Final transcription of " 
-                      << engine_->getBufferSize() << " samples..." << std::endl;
-            
-            std::string text = engine_->transcribe();
-            if (!text.empty()) {
-                std::cout << "[Session " << session_id_ << "] Final result: " << text << std::endl;
-                sendTranscription(text, true);
-            }
-        }
-        catch (std::exception& e) {
-            std::cerr << "[Session " << session_id_ << "] Final transcription error: " 
-                      << e.what() << std::endl;
-        }
+    std::cout << "[Session " << session_id_ << "] Ending streaming..." << std::endl;
+
+    // Transcribir lo que quede en el buffer (flush final)
+    if (engine_) {
+        std::string finalText = engine_->transcribe(); // TODO: Add force_flush param to engine if needed?
+        // Asumimos que transcribe() normal pilla lo que queda si es el final, o deberiamos tener un flush()
+        
+        json msg = {
+            {"type", "transcription"},
+            {"text", finalText},
+            {"is_final", true}
+        };
+        sendMessage(msg);
     }
     
     std::cout << "[Session " << session_id_ << "] Ending session" << std::endl;
@@ -184,11 +167,40 @@ void StreamingSession::handleEnd() {
 }
 
 void StreamingSession::processAudioChunk(const std::vector<float>& audio) {
-    // Simplemente agregar al buffer del motor
+    if (!configured_ || !engine_) {
+        std::cout << "[Session " << session_id_ << "] Ignored audio (not configured)" << std::endl;
+        return;
+    }
+
+    // Agregar al buffer del motor
     engine_->processAudioChunk(audio);
     
-    // NO transcribir aquí - solo acumular
-    // La transcripción se hará cuando el cliente envíe "end"
+    // Obtener tamaño actual del buffer
+    size_t current_size = engine_->getBufferSize();
+    
+    // Detectar si el buffer se ha truncado o reiniciado
+    if (current_size < last_transcribed_size_) {
+        last_transcribed_size_ = 0;
+    }
+    
+    // Transcribir solo si ha llegado suficiente audio NUEVO (1 segundo = 16000 samples)
+    const size_t MIN_NEW_SAMPLES = 16000;
+    
+    if (current_size >= MIN_NEW_SAMPLES && 
+        (current_size - last_transcribed_size_ >= MIN_NEW_SAMPLES)) {
+        
+        last_transcribed_size_ = current_size;
+        std::string partialText = engine_->transcribe();
+        
+        if (!partialText.empty()) {
+            json msg = {
+                {"type", "transcription"},
+                {"text", partialText},
+                {"is_final", false}
+            };
+            sendMessage(msg);
+        }
+    }
 }
 
 void StreamingSession::sendReady() {
