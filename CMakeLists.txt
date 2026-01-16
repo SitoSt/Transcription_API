@@ -41,6 +41,9 @@ target_link_libraries(streaming_whisper PUBLIC
 add_executable(transcription_server
     src/server.cpp
     src/server/StreamingSession.cpp
+    src/server/AuthManager.cpp
+    src/server/ConnectionLimiter.cpp
+    src/server/ConnectionGuard.cpp
 )
 
 target_include_directories(transcription_server PRIVATE
@@ -57,7 +60,6 @@ target_link_libraries(transcription_server PRIVATE
 # Tests
 if(BUILD_TESTS)
     enable_testing()
-    
     # Descargar Google Test
     include(FetchContent)
     FetchContent_Declare(

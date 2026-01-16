@@ -57,7 +57,7 @@ class TranscriptionClient:
         self.ws = await websockets.connect(self.server_url)
         print("✓ Conectado")
     
-    async def configure(self, language="es", energy_threshold=0.02, min_silence_frames=20):
+    async def configure(self, language="es", energy_threshold=0.02, min_silence_frames=20, token=None):
         """Enviar configuración inicial"""
         config_msg = {
             "type": "config",
@@ -65,6 +65,9 @@ class TranscriptionClient:
             "energy_threshold": energy_threshold,
             "min_silence_frames": min_silence_frames
         }
+        
+        if token:
+            config_msg["token"] = token
         
         print(f"⚙️  Enviando configuración: {config_msg}")
         await self.ws.send(json.dumps(config_msg))
@@ -253,6 +256,7 @@ async def main():
     parser.add_argument("--duration", type=float, default=5.0, help="Duración para generación (segundos)")
     parser.add_argument("--freq", type=float, default=440.0, help="Frecuencia para tono (Hz)")
     parser.add_argument("--url", type=str, default="ws://localhost:9001", help="URL del servidor")
+    parser.add_argument("--token", type=str, help="Token de autenticación")
     
     args = parser.parse_args()
     
@@ -260,7 +264,7 @@ async def main():
     
     try:
         await client.connect()
-        await client.configure()
+        await client.configure(token=args.token)
         
         if args.file:
             if not Path(args.file).exists():

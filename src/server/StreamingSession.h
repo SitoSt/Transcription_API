@@ -6,6 +6,7 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 #include "whisper/StreamingWhisperEngine.h"
+#include "AuthManager.h"
 
 namespace beast = boost::beast;
 namespace websocket = beast::websocket;
@@ -22,7 +23,7 @@ using json = nlohmann::json;
  * - WebSocket stream para comunicación
  * 
  * Protocolo JSON:
- * - Cliente envía: {"type": "config", ...} o {"type": "audio", "data": "base64"}
+ * - Cliente envía: {"type": "config", "token": "...", ...} o binario de audio
  * - Servidor envía: {"type": "transcription", "text": "...", "is_final": true}
  */
 class StreamingSession : public std::enable_shared_from_this<StreamingSession> {
@@ -31,10 +32,12 @@ public:
      * @brief Constructor
      * @param ws WebSocket stream (movido)
      * @param model_path Ruta al modelo de whisper
+     * @param auth_manager Gestor de autenticación
      */
     StreamingSession(
         websocket::stream<tcp::socket> ws,
-        const std::string& model_path
+        const std::string& model_path,
+        std::shared_ptr<AuthManager> auth_manager
     );
     
     /**
@@ -67,6 +70,7 @@ private:
     std::unique_ptr<StreamingWhisperEngine> engine_;
     std::string session_id_;
     std::string model_path_;
+    std::shared_ptr<AuthManager> auth_manager_;
     bool configured_;
     size_t last_transcribed_size_;
     

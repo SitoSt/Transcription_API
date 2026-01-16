@@ -8,10 +8,12 @@
 
 StreamingSession::StreamingSession(
     websocket::stream<tcp::socket> ws,
-    const std::string& model_path
+    const std::string& model_path,
+    std::shared_ptr<AuthManager> auth_manager
 )
     : ws_(std::move(ws)),
       model_path_(model_path),
+      auth_manager_(auth_manager),
       configured_(false),
       last_transcribed_size_(0),
       language_("es")
@@ -115,6 +117,21 @@ void StreamingSession::handleBinaryMessage(const std::vector<unsigned char>& dat
 
 void StreamingSession::handleConfig(const json& msg) {
     try {
+        if (auth_manager_->isAuthEnabled()) {
+            if (!msg.contains("token") || !msg["token"].is_string()) {
+                sendError("Missing or invalid 'token'", "AUTH_REQUIRED");
+                ws_.close(websocket::close_code::policy_error);
+                return;
+            }
+
+            std::string token = msg["token"];
+            if (!auth_manager_->validate(token)) {
+                sendError("Invalid token", "AUTH_FAILED");
+                ws_.close(websocket::close_code::policy_error);
+                return;
+            }
+        }
+
         // Extraer configuración
         if (msg.contains("language")) {
             language_ = msg["language"];

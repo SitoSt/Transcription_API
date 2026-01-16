@@ -50,8 +50,10 @@ The system is composed of two main components:
 Start the server listening on port `9001`:
 
 ```bash
-./build/transcription_server /path/to/ggml-model.bin
+./build/transcription_server --model /path/to/ggml-model.bin --bind 0.0.0.0 --auth-token YOUR_TOKEN
 ```
+
+For a LAN-only deployment, set `--bind` to the server's local IP (for example the IP behind `transcript.local`).
 
 *Note: You can download models from the [whisper.cpp repository](https://github.com/ggerganov/whisper.cpp).*
 
@@ -60,7 +62,7 @@ Start the server listening on port `9001`:
 The service uses a mixed Text/Binary protocol:
 
 1.  **Configuration** (JSON):
-    *   Client -> Server: `{"type": "config", "language": "en"}`
+    *   Client -> Server: `{"type": "config", "language": "en", "token": "YOUR_TOKEN"}`
     *   Server -> Client: `{"type": "ready"}`
 
 2.  **Audio Streaming** (Binary):
