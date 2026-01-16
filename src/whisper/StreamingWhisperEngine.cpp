@@ -30,14 +30,27 @@ StreamingWhisperEngine::~StreamingWhisperEngine() {
 void StreamingWhisperEngine::processAudioChunk(const std::vector<float>& pcm_data) {
     std::lock_guard<std::mutex> lock(buffer_mutex_);
     
-    // Evitar overflow del buffer
-    if (audio_buffer_.size() + pcm_data.size() > max_buffer_samples_) {
-        // Eliminar la primera mitad del buffer para hacer espacio
-        size_t half = audio_buffer_.size() / 2;
-        audio_buffer_.erase(audio_buffer_.begin(), audio_buffer_.begin() + half);
-    }
+    // Calcular el tamaño final esperado
+    size_t new_total_size = audio_buffer_.size() + pcm_data.size();
     
-    audio_buffer_.insert(audio_buffer_.end(), pcm_data.begin(), pcm_data.end());
+    if (new_total_size > max_buffer_samples_) {
+        // Si el nuevo chunk ya es más grande que el buffer máximo,
+        // nos quedamos solo con la parte final del nuevo chunk
+        if (pcm_data.size() >= max_buffer_samples_) {
+            audio_buffer_.clear();
+            audio_buffer_.insert(audio_buffer_.end(), 
+                               pcm_data.end() - max_buffer_samples_, 
+                               pcm_data.end());
+        } else {
+            // Si no, eliminamos lo necesario del principio del buffer existente
+            size_t to_discard = new_total_size - max_buffer_samples_;
+            audio_buffer_.erase(audio_buffer_.begin(), audio_buffer_.begin() + to_discard);
+            audio_buffer_.insert(audio_buffer_.end(), pcm_data.begin(), pcm_data.end());
+        }
+    } else {
+        // Si cabe, simplemente agregamos
+        audio_buffer_.insert(audio_buffer_.end(), pcm_data.begin(), pcm_data.end());
+    }
 }
 
 std::string StreamingWhisperEngine::transcribe() {

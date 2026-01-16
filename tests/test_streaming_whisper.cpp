@@ -250,6 +250,67 @@ TEST_F(StreamingWhisperEngineTest, ResetAfterTranscription) {
 }
 
 /**
+ * Test 14: Verificar comportamiento con un chunk masivo (mayor que el buffer máximo)
+ * Debería mantener el buffer bajo el límite o manejarlo de forma segura
+ */
+TEST_F(StreamingWhisperEngineTest, MassiveSingleChunk) {
+    StreamingWhisperEngine engine(TEST_MODEL_PATH);
+    
+    // Max buffer es 30s * 16000 = 480,000
+    const int massive_size = 16000 * 40; // 40 segundos
+    std::vector<float> massive_chunk(massive_size, 0.1f);
+    
+    engine.processAudioChunk(massive_chunk);
+    
+    // Verificar si el buffer creció descontroladamente
+    // Esperamos que el buffer sea <= max_buffer_size (480,000)
+    // NOTA: Si este test falla, es que tenemos un bug en processAudioChunk
+    EXPECT_LE(engine.getBufferSize(), 16000 * 30);
+}
+
+/**
+ * Test 15: Verificar comportamiento con idioma inválido
+ */
+TEST_F(StreamingWhisperEngineTest, InvalidLanguage) {
+    StreamingWhisperEngine engine(TEST_MODEL_PATH);
+    
+    engine.setLanguage("klingon"); // Idioma inexistente
+    
+    // Agregar audio
+    std::vector<float> audio(16000, 0.1f);
+    engine.processAudioChunk(audio);
+    
+    // Transcribir podría fallar o ignorarlo (fallback a auto)
+    // Pero no debería crashear (segfault/abort)
+    try {
+        engine.transcribe();
+    } catch (const std::exception& e) {
+        // Es aceptable que lance excepción si whisper valida el idioma
+        SUCCEED(); 
+        return;
+    }
+    
+    // Si no lanza, también es aceptable si no crashea
+}
+
+/**
+ * Test 16: Verificar audio con valores NaN/Inf
+ */
+TEST_F(StreamingWhisperEngineTest, AudioWithNaN) {
+    StreamingWhisperEngine engine(TEST_MODEL_PATH);
+    
+    std::vector<float> bad_audio(16000);
+    bad_audio[0] = std::numeric_limits<float>::quiet_NaN();
+    bad_audio[1] = std::numeric_limits<float>::infinity();
+    
+    engine.processAudioChunk(bad_audio);
+    
+    EXPECT_NO_THROW({
+        engine.transcribe();
+    });
+}
+
+/**
  * Main de los tests
  */
 int main(int argc, char **argv) {
