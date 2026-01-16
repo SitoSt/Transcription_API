@@ -3,5 +3,4 @@ build/
 .vscode/
 bin/
 models/
-clients/
 *.wav
