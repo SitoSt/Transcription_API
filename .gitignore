@@ -4,3 +4,9 @@ build/
 bin/
 models/
 *.wav
+
+# SSL/TLS Certificates and Keys
+*.crt
+*.key
+*.pem
+*.csr
