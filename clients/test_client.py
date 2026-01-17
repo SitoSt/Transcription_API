@@ -54,7 +54,18 @@ class TranscriptionClient:
     async def connect(self):
         """Conectar al servidor WebSocket"""
         print(f"🔌 Conectando a {self.server_url}...")
-        self.ws = await websockets.connect(self.server_url)
+        
+        ssl_context = None
+        if self.server_url.startswith("wss://"):
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = False
+            ssl_context.verify_mode = ssl.CERT_NONE
+
+        self.ws = await websockets.connect(
+            self.server_url,
+            ssl=ssl_context
+        )
         print("✓ Conectado")
     
     async def configure(self, language="es", energy_threshold=0.02, min_silence_frames=20, token=None):

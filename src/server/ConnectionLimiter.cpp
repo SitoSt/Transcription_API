@@ -21,7 +21,7 @@ bool ConnectionLimiter::tryAcquire(const std::string& ip) {
 
 void ConnectionLimiter::release(const std::string& ip) {
     std::lock_guard<std::mutex> lock(mutex_);
-    std::pair<std::string, size_t> it = per_ip_.find(ip);
+    auto it = per_ip_.find(ip);
     if (it != per_ip_.end() && it->second > 0) {
         --it->second;
         if (it->second == 0) {

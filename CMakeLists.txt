@@ -12,6 +12,7 @@ add_subdirectory(third_party/whisper.cpp)
 
 # Encontrar dependencias
 find_package(Boost REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 # Agregar nlohmann/json para protocolo JSON
 include(FetchContent)
@@ -55,6 +56,8 @@ target_link_libraries(transcription_server PRIVATE
     pthread
     streaming_whisper
     nlohmann_json::nlohmann_json
+    OpenSSL::SSL
+    OpenSSL::Crypto
 )
 
 # Tests

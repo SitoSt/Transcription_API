@@ -1,4 +1,5 @@
 #include <boost/asio.hpp>
+#include <boost/asio/ssl.hpp>
 #include <boost/beast.hpp>
 #include <boost/beast/websocket.hpp>
 #include <iostream>
@@ -16,11 +17,13 @@
 
 using tcp = boost::asio::ip::tcp;
 namespace websocket = boost::beast::websocket;
+namespace ssl = boost::asio::ssl;
 
 namespace {
 
 void printUsage(const char* binary) {
     std::cout << "Usage: " << binary << " [--model path] [--bind address] [--auth-token token]"
+              << " [--cert cert.pem] [--key key.pem]"
               << " [--max-connections N] [--max-connections-per-ip N]" << std::endl;
     std::cout << "If no flags are provided, the first argument is treated as model path." << std::endl;
 }
@@ -40,6 +43,10 @@ ServerConfig parseArgs(int argc, char* argv[]) {
             config.bind_address = argv[++i];
         } else if (arg == "--auth-token" && i + 1 < argc) {
             config.auth_token = argv[++i];
+        } else if (arg == "--cert" && i + 1 < argc) {
+            config.cert_path = argv[++i];
+        } else if (arg == "--key" && i + 1 < argc) {
+            config.key_path = argv[++i];
         } else if (arg == "--max-connections" && i + 1 < argc) {
             config.max_connections = static_cast<size_t>(std::stoul(argv[++i]));
         } else if (arg == "--max-connections-per-ip" && i + 1 < argc) {
@@ -60,15 +67,32 @@ void handleSession(tcp::socket socket,
                    const std::shared_ptr<ConnectionLimiter>& limiter,
                    const std::string& client_ip,
                    const std::string& model_path,
-                   const std::shared_ptr<AuthManager>& auth_manager) {
+                   const std::shared_ptr<AuthManager>& auth_manager,
+                   std::shared_ptr<ssl::context> ssl_ctx) {
     ConnectionGuard guard(limiter, client_ip);
 
     try {
-        websocket::stream<tcp::socket> ws(std::move(socket));
-        auto session = std::make_shared<StreamingSession>(std::move(ws), model_path, auth_manager);
-        session->run();
+        if (ssl_ctx) {
+            // Secure WebSocket (WSS)
+            websocket::stream<ssl::stream<tcp::socket>> ws(std::move(socket), *ssl_ctx);
+            
+            // Perform SSL handshake
+            ws.next_layer().handshake(ssl::stream_base::server);
+            
+            auto session = std::make_shared<StreamingSession<websocket::stream<ssl::stream<tcp::socket>>>>(
+                std::move(ws), model_path, auth_manager
+            );
+            session->run();
+        } else {
+            // Plain WebSocket (WS)
+            websocket::stream<tcp::socket> ws(std::move(socket));
+            auto session = std::make_shared<StreamingSession<websocket::stream<tcp::socket>>>(
+                std::move(ws), model_path, auth_manager
+            );
+            session->run();
+        }
     } catch (std::exception& e) {
-        std::cerr << "Session error: " << e.what() << std::endl;
+        std::cerr << "Session error (" << client_ip << "): " << e.what() << std::endl;
     }
 }
 } // namespace
@@ -81,10 +105,27 @@ int main(int argc, char* argv[]) {
         std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << std::endl;
         std::cout << "Model: " << config.model_path << std::endl;
         std::cout << "Bind:  " << config.bind_address << ":" << config.port << std::endl;
-        std::cout << "Auth:  " << (config.auth_token.empty() ? "disabled" : "token") << std::endl;
+        
+        bool use_ssl = !config.cert_path.empty() && !config.key_path.empty();
+        std::cout << "SSL:   " << (use_ssl ? "Enabled" : "Disabled") << std::endl;
+        
+        std::cout << "Auth:  " << (config.auth_token.empty() ? "disabled" : "enabled") << std::endl;
         std::cout << "Max:   " << config.max_connections << " total, "
                   << config.max_connections_per_ip << " per IP" << std::endl;
         std::cout << "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" << std::endl;
+
+        // Initialize SSL context if needed
+        std::shared_ptr<ssl::context> ssl_ctx;
+        if (use_ssl) {
+            try {
+                ssl_ctx = std::make_shared<ssl::context>(ssl::context::tlsv12);
+                ssl_ctx->use_certificate_chain_file(config.cert_path);
+                ssl_ctx->use_private_key_file(config.key_path, ssl::context::pem);
+            } catch (std::exception& e) {
+                std::cerr << "❌ SSL Init Error: " << e.what() << std::endl;
+                return 1;
+            }
+        }
 
         boost::asio::io_context ioc;
         auto bind_address = boost::asio::ip::make_address(config.bind_address);
@@ -97,7 +138,8 @@ int main(int argc, char* argv[]) {
 
         auto auth_manager = std::make_shared<AuthManager>(config.auth_token);
 
-        std::cout << "\n🚀 Server listening on ws://" << config.bind_address << ":" << config.port << std::endl;
+        std::string protocol = use_ssl ? "wss" : "ws";
+        std::cout << "\n🚀 Server listening on " << protocol << "://" << config.bind_address << ":" << config.port << std::endl;
         std::cout << "Waiting for connections...\n" << std::endl;
 
         while (true) {
@@ -120,7 +162,8 @@ int main(int argc, char* argv[]) {
                             limiter,
                             client_ip,
                             config.model_path,
-                            auth_manager).detach();
+                            auth_manager,
+                            ssl_ctx).detach();
             } catch (...) {
                 limiter->release(client_ip);
                 throw;
