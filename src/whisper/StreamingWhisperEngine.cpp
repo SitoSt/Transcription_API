@@ -9,6 +9,7 @@ StreamingWhisperEngine::StreamingWhisperEngine(const std::string& model_path)
     
     // Inicializar contexto de whisper con parámetros por defecto
     whisper_context_params cparams = whisper_context_default_params();
+    cparams.use_gpu = true; // Forzar uso de GPU si está disponible (CUDA/Metal)
     ctx_ = whisper_init_from_file_with_params(model_path.c_str(), cparams);
     if (!ctx_) {
         throw std::runtime_error("Failed to load whisper model: " + model_path);

@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  server:
+    build: .
+    image: transcription-server:latest
+    container_name: transcription_server
+    ports:
+      - "9001:9001"
+    volumes:
+      - ./models:/app/models
+      # Mount SSL certs if needed
+      # - ./server.crt:/app/server.crt
+      # - ./server.key:/app/server.key
+    restart: unless-stopped
+    command: [ "./transcription_server", "--bind", "0.0.0.0", "--port", "9001", "--model", "/app/models/ggml-base.bin", "--thread-safe" ]
+    # Enable GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]

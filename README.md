@@ -56,7 +56,50 @@ Start the server listening on port `9001`:
 For a LAN-only deployment, set `--bind` to the server's local IP (for example the IP behind `transcript.local`).
 To enable **TLS Encryption (HTTPS/WSS)**, provide both `--cert` and `--key`.
 
+To enable **TLS Encryption (HTTPS/WSS)**, provide both `--cert` and `--key`.
+
 *Note: You can download models from the [whisper.cpp repository](https://github.com/ggerganov/whisper.cpp).*
+
+## 🐳 Docker Support
+
+You can also run the server using Docker, which simplifies dependency management.
+
+### 🎮 NVIDIA GPU Support
+
+This project now supports NVIDIA GPU acceleration out-of-the-box.
+**Prerequisites**:
+1.  **NVIDIA Drivers** installed on the host.
+2.  **NVIDIA Container Toolkit** installed and configured (check with `docker run --rm --gpus all nvidia/cuda:12.3.1-base-ubuntu22.04 nvidia-smi`).
+3.  The `docker-compose.yml` is already configured to request GPU resources.
+
+### Using Docker Compose (Recommended)
+
+1.  **Download a Model**:
+    Ensure you have a whisper model (e.g., `ggml-base.bin`) in a `models/` directory.
+    ```bash
+    mkdir models
+    ./third_party/whisper.cpp/models/download-ggml-model.sh base
+    mv ./third_party/whisper.cpp/models/ggml-base.bin ./models/
+    ```
+
+2.  **Run with Compose**:
+    ```bash
+    docker-compose up --build
+    ```
+    The server will be available at `ws://localhost:9001`.
+    You should see "BLAS = 1" or "CUDA = 1" in the logs if GPU is active.
+
+### Manual Docker Build
+
+1.  **Build the Image**:
+    ```bash
+    docker build -t transcription-server .
+    ```
+
+2.  **Run the Container**:
+    ```bash
+    docker run -p 9001:9001 -v $(pwd)/models:/app/models transcription-server
+    ```
 
 ## 📡 WebSocket Protocol
 
