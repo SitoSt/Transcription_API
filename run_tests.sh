@@ -14,12 +14,10 @@ echo -e "${BLUE}🧪 Ejecutando tests del proyecto...${NC}\n"
 # Ir al directorio raíz del proyecto
 cd "$(dirname "$0")"
 
-# Compilar si es necesario
-if [ ! -f "build/tests/test_streaming_whisper" ]; then
-    echo -e "${BLUE}📦 Compilando proyecto...${NC}"
-    cmake -B build -DBUILD_TESTS=ON
-    cmake --build build -j
-fi
+# Compilar con tests habilitados
+echo -e "${BLUE}📦 Compilando proyecto con tests...${NC}"
+cmake -B build -DBUILD_TESTS=ON -DBUILD_SERVER=OFF -DBUILD_SHARED_LIBS=OFF
+cmake --build build --target test_streaming_whisper -j
 
 # Ejecutar tests
 cd build/tests
