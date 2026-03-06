@@ -48,6 +48,15 @@ public:
         }
     }
 
+    /**
+     * @brief Get telemetry metrics
+     */
+    std::string getMetrics() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return "{\"active_inferences\": " + std::to_string(active_count_) + 
+               ", \"max_inferences\": " + std::to_string(max_concurrent_) + "}";
+    }
+
     // RAII guard for exception-safe acquire/release
     class Guard {
     public:
@@ -66,7 +75,7 @@ private:
     InferenceLimiter(const InferenceLimiter&) = delete;
     InferenceLimiter& operator=(const InferenceLimiter&) = delete;
 
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::condition_variable cv_;
     int active_count_ = 0;
     int max_concurrent_ = 4; // Default safe limit for a 8GB GPU

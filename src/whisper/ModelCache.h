@@ -128,6 +128,15 @@ public:
         return ctx_ != nullptr;
     }
 
+    /**
+     * @brief Get telemetry metrics
+     */
+    std::string getMetrics() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return "{\"is_loaded\": " + std::string(ctx_ ? "true" : "false") + 
+               ", \"ref_count\": " + std::to_string(ref_count_) + "}";
+    }
+
     // Non-copyable
     ModelCache(const ModelCache&) = delete;
     ModelCache& operator=(const ModelCache&) = delete;

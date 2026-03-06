@@ -32,3 +32,9 @@ void ConnectionLimiter::release(const std::string& ip) {
         --total_;
     }
 }
+
+std::string ConnectionLimiter::getMetrics() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return "{\"active_connections\": " + std::to_string(total_) + 
+           ", \"max_connections\": " + std::to_string(max_total_) + "}";
+}

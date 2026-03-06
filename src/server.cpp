@@ -134,6 +134,9 @@ ServerConfig configFromEnv() {
     if (auto v = env("WHISPER_INITIAL_PROMPT"); !v.empty())
         cfg.whisper_initial_prompt = v;
 
+    if (auto v = env("SESSION_TIMEOUT_SEC"); !v.empty())
+        cfg.session_timeout_sec = std::stoi(v);
+
     return cfg;
 }
 
@@ -149,14 +152,15 @@ void printUsage(const char* binary) {
               << " [--mqtt-url URL] [--mqtt-topic TOPIC]"
               << " [--whisper-beam-size N] [--whisper-threads N]"
               << " [--max-concurrent-inference N] [--model-cache-ttl N]"
-              << " [--whisper-initial-prompt TEXT] [--env-file path]" << std::endl;
+              << " [--whisper-initial-prompt TEXT] [--session-timeout-sec N]"
+              << " [--env-file path]" << std::endl;
     std::cout << "All options can also be set via environment variables (or a .env file):" << std::endl;
     std::cout << "  MODEL_PATH, BIND_ADDRESS, PORT," << std::endl;
     std::cout << "  AUTH_API_URL, AUTH_API_SECRET, AUTH_CACHE_TTL, AUTH_API_TIMEOUT," << std::endl;
     std::cout << "  TLS_CERT, TLS_KEY, MAX_CONNECTIONS, MAX_CONNECTIONS_PER_IP," << std::endl;
     std::cout << "  MQTT_URL, MQTT_TOPIC, MQTT_CLIENT_ID," << std::endl;
     std::cout << "  WHISPER_BEAM_SIZE, WHISPER_THREADS, MAX_CONCURRENT_INFERENCE," << std::endl;
-    std::cout << "  MODEL_CACHE_TTL, WHISPER_INITIAL_PROMPT" << std::endl;
+    std::cout << "  MODEL_CACHE_TTL, WHISPER_INITIAL_PROMPT, SESSION_TIMEOUT_SEC" << std::endl;
     std::cout << "CLI arguments override environment variables." << std::endl;
 }
 
@@ -217,6 +221,8 @@ ServerConfig parseArgs(int argc, char* argv[]) {
             config.model_cache_ttl = std::stoi(argv[++i]);
         } else if (arg == "--whisper-initial-prompt" && i + 1 < argc) {
             config.whisper_initial_prompt = argv[++i];
+        } else if (arg == "--session-timeout-sec" && i + 1 < argc) {
+            config.session_timeout_sec = std::stoi(argv[++i]);
         } else if (arg == "--thread-safe") {
             // accepted for backwards compatibility
         } else if (arg.rfind("--", 0) != 0 &&
@@ -240,18 +246,46 @@ void handleSession(tcp::socket socket,
                    int whisper_beam_size,
                    int whisper_threads,
                    const std::string& whisper_initial_prompt,
+                   int session_timeout_sec,
                    std::shared_ptr<ssl::context> ssl_ctx,
                    std::shared_ptr<MQTTPublisher> mqtt_publisher) {
     ConnectionGuard guard(limiter, client_ip);
 
     try {
+        // Check for /metrics endpoint before upgrading to WebSocket
+        boost::beast::flat_buffer buffer;
+        boost::beast::http::request<boost::beast::http::string_body> req;
+        boost::beast::http::read(socket, buffer, req);
+
+        if (req.target() == "/metrics") {
+            std::string inf_metrics = InferenceLimiter::instance().getMetrics();
+            std::string cache_metrics = ModelCache::instance().getMetrics();
+            std::string conn_metrics = limiter->getMetrics();
+
+            std::string combined = "{\n"
+                                   "  \"inference\": " + inf_metrics + ",\n"
+                                   "  \"cache\": " + cache_metrics + ",\n"
+                                   "  \"connections\": " + conn_metrics + "\n"
+                                   "}";
+
+            boost::beast::http::response<boost::beast::http::string_body> res;
+            res.version(req.version());
+            res.result(boost::beast::http::status::ok);
+            res.set(boost::beast::http::field::server, BOOST_BEAST_VERSION_STRING);
+            res.set(boost::beast::http::field::content_type, "application/json");
+            res.body() = combined;
+            res.prepare_payload();
+            boost::beast::http::write(socket, res);
+            return; // Metrics served, close connection
+        }
+
         if (ssl_ctx) {
             websocket::stream<ssl::stream<tcp::socket>> ws(std::move(socket), *ssl_ctx);
             ws.next_layer().handshake(ssl::stream_base::server);
             auto session = std::make_shared<StreamingSession<websocket::stream<ssl::stream<tcp::socket>>>>(
                 std::move(ws), model_path, auth_manager,
                 whisper_beam_size, whisper_threads, whisper_initial_prompt,
-                mqtt_publisher
+                session_timeout_sec, mqtt_publisher
             );
             session->run();
         } else {
@@ -259,7 +293,7 @@ void handleSession(tcp::socket socket,
             auto session = std::make_shared<StreamingSession<websocket::stream<tcp::socket>>>(
                 std::move(ws), model_path, auth_manager,
                 whisper_beam_size, whisper_threads, whisper_initial_prompt,
-                mqtt_publisher
+                session_timeout_sec, mqtt_publisher
             );
             session->run();
         }
@@ -376,6 +410,7 @@ int main(int argc, char* argv[]) {
                             config.whisper_beam_size,
                             config.whisper_threads,
                             config.whisper_initial_prompt,
+                            config.session_timeout_sec,
                             ssl_ctx,
                             mqtt_publisher).detach();
             } catch (...) {

@@ -9,6 +9,7 @@ struct ServerConfig {
     std::string key_path;
     size_t max_connections = 8;
     size_t max_connections_per_ip = 2;
+    int session_timeout_sec = 30;       // seconds before disconnecting idle sessions
 
     // Auth API
     std::string auth_api_url;           // empty = auth disabled

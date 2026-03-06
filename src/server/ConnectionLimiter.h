@@ -10,8 +10,10 @@ public:
     bool tryAcquire(const std::string& ip);
     void release(const std::string& ip);
 
+    std::string getMetrics() const;
+
 private:
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::unordered_map<std::string, size_t> per_ip_;
     size_t max_total_;
     size_t max_per_ip_;

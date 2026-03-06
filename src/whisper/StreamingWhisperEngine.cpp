@@ -156,6 +156,16 @@ std::string StreamingWhisperEngine::transcribe(size_t start_offset) {
         throw std::runtime_error("Whisper transcription failed with code: " + std::to_string(result));
     }
     
+    // Auto-language caching
+    if (language_ == "auto") {
+        int id = whisper_full_lang_id_from_state(state_);
+        const char* detected = whisper_lang_str(id);
+        if (detected && std::string(detected) != "auto") {
+            language_ = detected;
+            std::cout << "[StreamingWhisperEngine] Auto-detected language locked to: " << language_ << std::endl;
+        }
+    }
+    
     // Extract transcribed text from state
     std::string transcription;
     const int n_segments = whisper_full_n_segments_from_state(state_);

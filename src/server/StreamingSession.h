@@ -32,6 +32,7 @@ public:
         int whisper_beam_size = 5,
         int whisper_threads = 4,
         const std::string& whisper_initial_prompt = "",
+        int session_timeout_sec = 30,
         std::shared_ptr<MQTTPublisher> mqtt_publisher = nullptr
     )
         : ws_(std::move(ws)),
@@ -45,6 +46,7 @@ public:
           whisper_beam_size_(whisper_beam_size),
           whisper_threads_(whisper_threads),
           whisper_initial_prompt_(whisper_initial_prompt),
+          session_timeout_sec_(session_timeout_sec),
           model_acquired_(false)
     {
         session_id_ = generateSessionId();
@@ -57,6 +59,20 @@ public:
 
     void run() {
         try {
+            if (session_timeout_sec_ > 0) {
+                // Set native socket receive timeout to drop idle/zombie connections
+                auto native_socket = beast::get_lowest_layer(ws_).native_handle();
+#if defined(_WIN32)
+                DWORD timeout = session_timeout_sec_ * 1000;
+                setsockopt(native_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
+#else
+                struct timeval tv;
+                tv.tv_sec = session_timeout_sec_;
+                tv.tv_usec = 0;
+                setsockopt(native_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
+            }
+
             ws_.accept();
             Log::info("WebSocket handshake accepted", session_id_);
 
@@ -385,6 +401,7 @@ private:
     int whisper_beam_size_;
     int whisper_threads_;
     std::string whisper_initial_prompt_;
+    int session_timeout_sec_;
     bool model_acquired_;
 
     // Sliding window logic
