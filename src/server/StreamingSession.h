@@ -6,6 +6,9 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <thread>
+#include <atomic>
+#include <mutex>
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include "whisper/StreamingWhisperEngine.h"
@@ -50,7 +53,9 @@ public:
           session_timeout_sec_(session_timeout_sec),
           model_acquired_(false),
           bytes_received_in_window_(0),
-          rate_limit_start_(std::chrono::steady_clock::now())
+          rate_limit_start_(std::chrono::steady_clock::now()),
+          flush_running_(false),
+          last_audio_time_(std::chrono::steady_clock::now())
     {
         session_id_ = generateSessionId();
         Log::info("Session created", session_id_);
@@ -58,6 +63,10 @@ public:
     }
 
     ~StreamingSession() override {
+        flush_running_ = false;
+        if (flush_thread_.joinable()) {
+            flush_thread_.join();
+        }
         SessionTracker::instance().remove(this);
         releaseModel();
     }
@@ -87,6 +96,9 @@ public:
 
             ws_.accept(req);
             Log::info("WebSocket handshake accepted", session_id_);
+
+            flush_running_ = true;
+            flush_thread_ = std::thread([this]() { this->flushLoop(); });
 
             while (true) {
                 beast::flat_buffer buffer;
@@ -121,11 +133,99 @@ public:
 
 private:
     void releaseModel() {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         if (model_acquired_) {
             engine_.reset();
             ModelCache::instance().release();
             model_acquired_ = false;
             Log::info("Model reference released", session_id_);
+        }
+    }
+
+    void sendMessage(const json& msg) {
+        try {
+            std::string str = msg.dump();
+            std::lock_guard<std::mutex> lock(write_mutex_);
+            ws_.text(true);
+            ws_.write(net::buffer(str));
+        }
+        catch (std::exception& e) {
+            Log::error(std::string("Failed to send message: ") + e.what(), session_id_);
+        }
+    }
+
+    void sendError(const std::string& message, const std::string& code) {
+        json msg = {
+            {"type", "error"},
+            {"message", message},
+            {"code", code}
+        };
+        sendMessage(msg);
+    }
+
+    void sendReady() {
+        json msg = {
+            {"type", "ready"},
+            {"session_id", session_id_},
+            {"config", {
+                {"language", language_},
+                {"sample_rate", 16000},
+                {"beam_size", whisper_beam_size_},
+                {"publish_mqtt", publish_mqtt_}
+            }}
+        };
+        sendMessage(msg);
+    }
+
+    void processAudioChunk(const std::vector<float>& audio) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (!configured_ || !engine_) return;
+
+        last_audio_time_ = std::chrono::steady_clock::now();
+        engine_->processAudioChunk(audio);
+
+        size_t current_size = engine_->getBufferSize();
+        
+        // Triggers roughly every 1 second of new audio (16kHz)
+        const size_t MIN_NEW_SAMPLES = 16000; 
+        // Sliding window size: e.g. 5 seconds (16000 * 5)
+        const size_t WINDOW_SIZE = 16000 * 5;
+
+        if (current_size >= MIN_NEW_SAMPLES &&
+            (current_size - last_transcribed_size_ >= MIN_NEW_SAMPLES)) {
+
+            last_transcribed_size_ = current_size;
+            
+            // To prevent O(n^2), we only transcribe from an offset, looking roughly at the last WINDOW_SIZE
+            // We use overlapping to avoid clipping words
+            if (current_size > WINDOW_SIZE + transcription_offset_) {
+                // We've accumulated enough beyond the window.
+                // Transcribe the finalized window exactly.
+                std::string finalized_text = engine_->transcribe(transcription_offset_);
+                full_transcription_ += finalized_text;
+                
+                // Shift the offset forward, leaving ~1.5s overlapping context (16000 * 1.5) to avoid cutting words
+                size_t keep_samples = static_cast<size_t>(16000 * 1.5);
+                engine_->reset(keep_samples);
+                
+                // Now buffer is tiny again.
+                current_size = engine_->getBufferSize();
+                last_transcribed_size_ = current_size;
+                transcription_offset_ = 0;
+            }
+
+            // Transcribe the working window
+            std::string partialText = engine_->transcribe(transcription_offset_);
+
+            if (!partialText.empty()) {
+                std::string merged_so_far = full_transcription_ + partialText;
+                json msg = {
+                    {"type", "transcription"},
+                    {"text", merged_so_far},
+                    {"is_final", false}
+                };
+                sendMessage(msg);
+            }
         }
     }
 
@@ -257,22 +357,27 @@ private:
             // Acquire model from cache (loads if not already loaded, instant if cached)
             Log::info("Acquiring model from cache: " + model_path_, session_id_);
             whisper_context* ctx = ModelCache::instance().acquire(model_path_);
-            model_acquired_ = true;
+            
+            {
+                std::lock_guard<std::mutex> lock(state_mutex_);
+                model_acquired_ = true;
 
-            // Create engine with shared context (creates its own whisper_state)
-            engine_ = std::make_unique<StreamingWhisperEngine>(ctx);
-            engine_->setLanguage(language_);
-            engine_->setThreads(whisper_threads_);
-            engine_->setBeamSize(whisper_beam_size_);
-            engine_->setVadThreshold(vad_thold);
-            if (!whisper_initial_prompt_.empty()) {
-                engine_->setInitialPrompt(whisper_initial_prompt_);
+                // Create engine with shared context (creates its own whisper_state)
+                engine_ = std::make_unique<StreamingWhisperEngine>(ctx);
+                engine_->setLanguage(language_);
+                engine_->setThreads(whisper_threads_);
+                engine_->setBeamSize(whisper_beam_size_);
+                engine_->setVadThreshold(vad_thold);
+                if (!whisper_initial_prompt_.empty()) {
+                    engine_->setInitialPrompt(whisper_initial_prompt_);
+                }
+
+                configured_ = true;
+                last_transcribed_size_ = 0;
+                transcription_offset_  = 0;
+                full_transcription_    = "";
+                last_audio_time_ = std::chrono::steady_clock::now();
             }
-
-            configured_ = true;
-            last_transcribed_size_ = 0;
-            transcription_offset_  = 0;
-            full_transcription_    = "";
 
             Log::info("Session ready (lang=" + language_ +
                       ", beam=" + std::to_string(whisper_beam_size_) +
@@ -288,16 +393,20 @@ private:
 
     void handleEnd() {
         Log::info("End-of-stream received, running final transcription", session_id_);
-
-        if (engine_) {
-            // Transcribe remaining buffer
-            std::string finalText = engine_->transcribe(transcription_offset_);
-            if (!finalText.empty()) {
-                // If it's just the continuation, append it
-                full_transcription_ += finalText;
+        
+        {
+            std::lock_guard<std::mutex> lock(state_mutex_);
+            if (engine_) {
+                // Transcribe remaining buffer
+                std::string finalText = engine_->transcribe(transcription_offset_);
+                if (!finalText.empty()) {
+                    // If it's just the continuation, append it
+                    full_transcription_ += finalText;
+                }
             }
+        }
 
-            Log::info("Final transcription: \"" + full_transcription_ + "\"", session_id_);
+        Log::info("Final transcription: \"" + full_transcription_ + "\"", session_id_);
             json msg = {
                 {"type", "transcription"},
                 {"text", full_transcription_},
@@ -311,7 +420,6 @@ private:
                     Log::warn("MQTT publish failed for session", session_id_);
                 }
             }
-        }
 
         try {
             ws_.close(websocket::close_code::normal);
@@ -322,90 +430,6 @@ private:
         }
     }
 
-    void processAudioChunk(const std::vector<float>& audio) {
-        if (!configured_ || !engine_) return;
-
-        engine_->processAudioChunk(audio);
-
-        size_t current_size = engine_->getBufferSize();
-        
-        // Triggers roughly every 1 second of new audio (16kHz)
-        const size_t MIN_NEW_SAMPLES = 16000; 
-        // Sliding window size: e.g. 5 seconds (16000 * 5)
-        const size_t WINDOW_SIZE = 16000 * 5;
-
-        if (current_size >= MIN_NEW_SAMPLES &&
-            (current_size - last_transcribed_size_ >= MIN_NEW_SAMPLES)) {
-
-            last_transcribed_size_ = current_size;
-            
-            // To prevent O(n^2), we only transcribe from an offset, looking roughly at the last WINDOW_SIZE
-            // We use overlapping to avoid clipping words
-            if (current_size > WINDOW_SIZE + transcription_offset_) {
-                // We've accumulated enough beyond the window.
-                // Transcribe the finalized window exactly.
-                std::string finalized_text = engine_->transcribe(transcription_offset_);
-                full_transcription_ += finalized_text;
-                
-                // Shift the offset forward, leaving ~1.5s overlapping context (16000 * 1.5) to avoid cutting words
-                size_t keep_samples = static_cast<size_t>(16000 * 1.5);
-                engine_->reset(keep_samples);
-                
-                // Now buffer is tiny again.
-                current_size = engine_->getBufferSize();
-                last_transcribed_size_ = current_size;
-                transcription_offset_ = 0;
-            }
-
-            // Transcribe the working window
-            std::string partialText = engine_->transcribe(transcription_offset_);
-
-            if (!partialText.empty()) {
-                std::string merged_so_far = full_transcription_ + partialText;
-                // Log::debug("Partial transcription: \"" + merged_so_far + "\"", session_id_);
-                json msg = {
-                    {"type", "transcription"},
-                    {"text", merged_so_far},
-                    {"is_final", false}
-                };
-                sendMessage(msg);
-            }
-        }
-    }
-
-    void sendReady() {
-        json msg = {
-            {"type", "ready"},
-            {"session_id", session_id_},
-            {"config", {
-                {"language", language_},
-                {"sample_rate", 16000},
-                {"beam_size", whisper_beam_size_},
-                {"publish_mqtt", publish_mqtt_}
-            }}
-        };
-        sendMessage(msg);
-    }
-
-    void sendError(const std::string& message, const std::string& code) {
-        json msg = {
-            {"type", "error"},
-            {"message", message},
-            {"code", code}
-        };
-        sendMessage(msg);
-    }
-
-    void sendMessage(const json& msg) {
-        try {
-            std::string str = msg.dump();
-            ws_.text(true);
-            ws_.write(net::buffer(str));
-        }
-        catch (std::exception& e) {
-            Log::error(std::string("Failed to send message: ") + e.what(), session_id_);
-        }
-    }
 
     std::string generateSessionId() {
         auto now = std::chrono::system_clock::now();
@@ -441,11 +465,55 @@ private:
     int session_timeout_sec_;
     bool model_acquired_;
     
-    // QoS Rate limiting
+    // Rate limiting & Timeout
     size_t bytes_received_in_window_;
     std::chrono::steady_clock::time_point rate_limit_start_;
+
+    // Threading & Sync
+    std::mutex write_mutex_;
+    std::mutex state_mutex_;
+    std::thread flush_thread_;
+    std::atomic<bool> flush_running_;
+    std::chrono::steady_clock::time_point last_audio_time_;
 
     // Sliding window logic
     size_t transcription_offset_;
     std::string full_transcription_;
+
+    void flushLoop() {
+        while (flush_running_) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            if (!flush_running_) break;
+
+            std::unique_lock<std::mutex> lock(state_mutex_, std::defer_lock);
+            if (!lock.try_lock()) {
+                // Main thread is likely transcribing or receiving audio, skip this cycle
+                continue;
+            }
+
+            if (!configured_ || !engine_) continue;
+
+            auto now = std::chrono::steady_clock::now();
+            auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_audio_time_).count();
+
+            size_t current_size = engine_->getBufferSize();
+            if (current_size > last_transcribed_size_ && elapsed_ms > 1000) {
+                // User stopped speaking for 1 second and there is fresh audio buffer
+                std::string partialText = engine_->transcribe(transcription_offset_);
+                if (!partialText.empty()) {
+                    std::string merged_so_far = full_transcription_ + partialText;
+                    json msg = {
+                        {"type", "transcription"},
+                        {"text", merged_so_far},
+                        {"is_final", false}
+                    };
+                    // Unlock state before sending to prevent deadlocks if sendMessage blocks
+                    lock.unlock();
+                    sendMessage(msg);
+                    lock.lock();
+                }
+                last_transcribed_size_ = current_size;
+            }
+        }
+    }
 };
