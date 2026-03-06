@@ -39,16 +39,18 @@ public:
     void processAudioChunk(const std::vector<float>& pcm_data);
     
     /**
-     * @brief Transcribir el buffer acumulado
+     * @brief Transcribir todo o una parte del buffer
+     * @param start_offset Offset en samples desde donde transcribir (0 = todo)
      * @return Texto transcrito
      * @throws std::runtime_error si la transcripción falla
      */
-    std::string transcribe();
+    std::string transcribe(size_t start_offset = 0);
     
     /**
-     * @brief Limpiar el buffer de audio
+     * @brief Limpiar el buffer de audio completamente o hasta un límite
+     * @param keep_samples Cantidad de samples a conservar del final (ventana deslizante)
      */
-    void reset();
+    void reset(size_t keep_samples = 0);
     
     /**
      * @brief Obtener tamaño actual del buffer en samples
@@ -78,6 +80,13 @@ public:
      * @param prompt Texto de contexto (ej: "Transcripción en español")
      */
     void setInitialPrompt(const std::string& prompt);
+
+    /**
+     * @brief Configurar umbral VAD (Voice Activity Detection)
+     * @param vad_thold Umbral de VAD (default: 0.0f = autodetect)
+     *        > 0.0 activa VAD (ej: 0.6f). Si es muy alto, recorta palabras.
+     */
+    void setVadThreshold(float vad_thold);
     
     /**
      * @brief Verificar si el engine está listo
@@ -105,5 +114,6 @@ private:
     std::string initial_prompt_;
     int n_threads_;
     int beam_size_;
+    float vad_thold_;
     int max_buffer_samples_; // Max samples in buffer (30s @ 16kHz)
 };

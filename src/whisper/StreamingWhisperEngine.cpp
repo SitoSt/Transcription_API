@@ -10,6 +10,7 @@ StreamingWhisperEngine::StreamingWhisperEngine(whisper_context* shared_ctx)
       language_("es"),
       n_threads_(4),
       beam_size_(5),
+      vad_thold_(0.0f),
       max_buffer_samples_(16000 * 30) {
 
     if (!ctx_) {
@@ -57,10 +58,10 @@ void StreamingWhisperEngine::processAudioChunk(const std::vector<float>& pcm_dat
     }
 }
 
-std::string StreamingWhisperEngine::transcribe() {
+std::string StreamingWhisperEngine::transcribe(size_t start_offset) {
     std::lock_guard<std::mutex> lock(buffer_mutex_);
     
-    if (audio_buffer_.empty()) {
+    if (audio_buffer_.empty() || start_offset >= audio_buffer_.size()) {
         return "";
     }
     
@@ -89,16 +90,27 @@ std::string StreamingWhisperEngine::transcribe() {
     params.logprob_thold   = -1.0f;
     params.no_speech_thold = 0.6f;
 
+    // VAD
+    if (vad_thold_ > 0.0f) {
+        params.audio_ctx = 0; // Use default
+        // VAD parameters in whisper_full_params (whisper.cpp specific)
+        // Set no_speech threshold more strictly if VAD is manually requested
+        params.no_speech_thold = vad_thold_;
+    }
+
     // Initial prompt for domain guidance
     if (!initial_prompt_.empty()) {
         params.initial_prompt = initial_prompt_.c_str();
     }
 
-    // Use per-session state for thread safety
+    // Use per-session state for thread safety, only process from start_offset
+    const float* data_ptr = audio_buffer_.data() + start_offset;
+    int data_size = static_cast<int>(audio_buffer_.size() - start_offset);
+    
     int result = whisper_full_with_state(
         ctx_, state_, params,
-        audio_buffer_.data(),
-        static_cast<int>(audio_buffer_.size())
+        data_ptr,
+        data_size
     );
     
     if (result != 0) {
@@ -119,9 +131,13 @@ std::string StreamingWhisperEngine::transcribe() {
     return transcription;
 }
 
-void StreamingWhisperEngine::reset() {
+void StreamingWhisperEngine::reset(size_t keep_samples) {
     std::lock_guard<std::mutex> lock(buffer_mutex_);
-    audio_buffer_.clear();
+    if (keep_samples == 0 || keep_samples >= audio_buffer_.size()) {
+        audio_buffer_.clear();
+    } else {
+        audio_buffer_.erase(audio_buffer_.begin(), audio_buffer_.end() - keep_samples);
+    }
 }
 
 size_t StreamingWhisperEngine::getBufferSize() const {
@@ -147,6 +163,10 @@ void StreamingWhisperEngine::setBeamSize(int beam_size) {
 
 void StreamingWhisperEngine::setInitialPrompt(const std::string& prompt) {
     initial_prompt_ = prompt;
+}
+
+void StreamingWhisperEngine::setVadThreshold(float vad_thold) {
+    vad_thold_ = vad_thold;
 }
 
 bool StreamingWhisperEngine::isReady() const {

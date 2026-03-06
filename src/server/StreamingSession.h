@@ -195,6 +195,12 @@ private:
                 }
             }
 
+            // VAD configure (0.0 = disabled, try a safe 0.4 for long silences only if enabled by client)
+            float vad_thold = 0.0f;
+            if (msg.contains("vad_thold") && msg["vad_thold"].is_number()) {
+                vad_thold = msg["vad_thold"].get<float>();
+            }
+
             // Acquire model from cache (loads if not already loaded, instant if cached)
             Log::info("Acquiring model from cache: " + model_path_, session_id_);
             whisper_context* ctx = ModelCache::instance().acquire(model_path_);
@@ -205,15 +211,19 @@ private:
             engine_->setLanguage(language_);
             engine_->setThreads(whisper_threads_);
             engine_->setBeamSize(whisper_beam_size_);
+            engine_->setVadThreshold(vad_thold);
             if (!whisper_initial_prompt_.empty()) {
                 engine_->setInitialPrompt(whisper_initial_prompt_);
             }
 
             configured_ = true;
             last_transcribed_size_ = 0;
+            transcription_offset_  = 0;
+            full_transcription_    = "";
 
             Log::info("Session ready (lang=" + language_ +
                       ", beam=" + std::to_string(whisper_beam_size_) +
+                      ", vad=" + std::to_string(vad_thold) +
                       ", mqtt=" + (publish_mqtt_ ? "on" : "off") + ")", session_id_);
             sendReady();
         }
@@ -227,17 +237,23 @@ private:
         Log::info("End-of-stream received, running final transcription", session_id_);
 
         if (engine_) {
-            std::string finalText = engine_->transcribe();
-            Log::info("Final transcription: \"" + finalText + "\"", session_id_);
+            // Transcribe remaining buffer
+            std::string finalText = engine_->transcribe(transcription_offset_);
+            if (!finalText.empty()) {
+                // If it's just the continuation, append it
+                full_transcription_ += finalText;
+            }
+
+            Log::info("Final transcription: \"" + full_transcription_ + "\"", session_id_);
             json msg = {
                 {"type", "transcription"},
-                {"text", finalText},
+                {"text", full_transcription_},
                 {"is_final", true}
             };
             sendMessage(msg);
 
             if (publish_mqtt_) {
-                auto event = TranscriptionEvent::make(session_id_, finalText, true, language_);
+                auto event = TranscriptionEvent::make(session_id_, full_transcription_, true, language_);
                 if (!mqtt_publisher_->publishTranscription(event)) {
                     Log::warn("MQTT publish failed for session", session_id_);
                 }
@@ -259,22 +275,44 @@ private:
         engine_->processAudioChunk(audio);
 
         size_t current_size = engine_->getBufferSize();
-        if (current_size < last_transcribed_size_) {
-            last_transcribed_size_ = 0;
-        }
+        
+        // Triggers roughly every 1 second of new audio (16kHz)
+        const size_t MIN_NEW_SAMPLES = 16000; 
+        // Sliding window size: e.g. 5 seconds (16000 * 5)
+        const size_t WINDOW_SIZE = 16000 * 5;
 
-        const size_t MIN_NEW_SAMPLES = 16000;
         if (current_size >= MIN_NEW_SAMPLES &&
             (current_size - last_transcribed_size_ >= MIN_NEW_SAMPLES)) {
 
             last_transcribed_size_ = current_size;
-            std::string partialText = engine_->transcribe();
+            
+            // To prevent O(n^2), we only transcribe from an offset, looking roughly at the last WINDOW_SIZE
+            // We use overlapping to avoid clipping words
+            if (current_size > WINDOW_SIZE + transcription_offset_) {
+                // We've accumulated enough beyond the window.
+                // Transcribe the finalized window exactly.
+                std::string finalized_text = engine_->transcribe(transcription_offset_);
+                full_transcription_ += finalized_text;
+                
+                // Shift the offset forward, leaving ~1.5s overlapping context (16000 * 1.5) to avoid cutting words
+                size_t keep_samples = static_cast<size_t>(16000 * 1.5);
+                engine_->reset(keep_samples);
+                
+                // Now buffer is tiny again.
+                current_size = engine_->getBufferSize();
+                last_transcribed_size_ = current_size;
+                transcription_offset_ = 0;
+            }
+
+            // Transcribe the working window
+            std::string partialText = engine_->transcribe(transcription_offset_);
 
             if (!partialText.empty()) {
-                Log::debug("Partial transcription: \"" + partialText + "\"", session_id_);
+                std::string merged_so_far = full_transcription_ + partialText;
+                // Log::debug("Partial transcription: \"" + merged_so_far + "\"", session_id_);
                 json msg = {
                     {"type", "transcription"},
-                    {"text", partialText},
+                    {"text", merged_so_far},
                     {"is_final", false}
                 };
                 sendMessage(msg);
@@ -348,4 +386,8 @@ private:
     int whisper_threads_;
     std::string whisper_initial_prompt_;
     bool model_acquired_;
+
+    // Sliding window logic
+    size_t transcription_offset_;
+    std::string full_transcription_;
 };
