@@ -469,6 +469,7 @@ int main(int argc, char* argv[]) {
         std::vector<std::thread> session_threads;
 
         // Run ioc in a dedicated thread so async_wait fires even while accept() blocks.
+        // ioc outlives ioc_thread: declared in this scope, joined at end of scope.
         std::thread ioc_thread([&ioc]() { ioc.run(); });
 
         boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
@@ -519,9 +520,11 @@ int main(int argc, char* argv[]) {
                             config.whisper_logprob_thold,
                             ssl_ctx,
                             mqtt_publisher);
-            } catch (...) {
+            } catch (const std::exception& e) {
                 limiter->release(client_ip);
-                throw;
+                Log::error("Failed to spawn session thread: " + std::string(e.what()) +
+                           " — connection rejected");
+                // do not re-throw; session_threads must be joined on shutdown
             }
         }
 
@@ -540,7 +543,7 @@ int main(int argc, char* argv[]) {
                               "s) exceeded, forcing exit");
                     std::exit(0);
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                std::this_thread::sleep_for(std::chrono::milliseconds(100)); // poll every 100 ms
             }
         });
         watchdog.detach();
@@ -548,10 +551,10 @@ int main(int argc, char* argv[]) {
         for (auto& t : session_threads) {
             if (t.joinable()) t.join();
         }
-        all_joined = true;
 
         ioc.stop();
         if (ioc_thread.joinable()) ioc_thread.join();
+        all_joined = true; // disarm watchdog only after all threads are joined
 
         Log::info("Graceful shutdown complete.");
     } catch (std::exception& e) {
