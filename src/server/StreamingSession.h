@@ -252,8 +252,8 @@ private:
             bytes_received_in_window_ = 0;
         }
 
-        if (data.size() < 44) { // WAV header is 44 bytes, so anything smaller is not a valid audio file
-            Log::warn("Received binary data too small to be a WAV file (" + std::to_string(data.size()) + " bytes)", session_id_);
+        if (data.size() < sizeof(float)) {
+            Log::warn("Binary frame too small for float32 (" + std::to_string(data.size()) + " bytes), ignoring", session_id_);
             return;
         }
 
