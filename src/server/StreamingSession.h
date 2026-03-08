@@ -232,7 +232,7 @@ private:
     }
 
     void handleBinaryMessage(const std::vector<unsigned char>& data) {
-        // Guard: reject oversized frames immediately — 1 MB = ~62s of float32 audio @ 16kHz,
+        // Guard: reject oversized frames immediately — 1 MB = ~16s of float32 audio @ 16kHz,
         // far beyond any legitimate streaming chunk.
         constexpr size_t MAX_FRAME_BYTES = 1 * 1024 * 1024; // 1 MB
         if (data.size() > MAX_FRAME_BYTES) {
@@ -241,27 +241,6 @@ private:
             boost::system::error_code ec;
             ws_.close(websocket::close_reason(websocket::close_code::policy_error, "Frame too large"), ec);
             return;
-        }
-
-        // Enforce Binary Rate Limit (QoS)
-        auto now = std::chrono::steady_clock::now();
-        auto elapsed_s = std::chrono::duration_cast<std::chrono::seconds>(now - rate_limit_start_).count();
-        
-        bytes_received_in_window_ += data.size();
-        
-        if (elapsed_s >= 3) {
-            // Fixed 3-second window: max 600 KB per window (~200 KB/s average).
-            // Note: this is a fixed window, not sliding — resets every 3 seconds.
-            const size_t MAX_BYTES_PER_WINDOW = 200 * 1024 * 3;
-            if (bytes_received_in_window_ > MAX_BYTES_PER_WINDOW) {
-                Log::warn("Rate limit exceeded (" + std::to_string(bytes_received_in_window_) + 
-                          " bytes in " + std::to_string(elapsed_s) + "s)", session_id_);
-                boost::system::error_code ec;
-                ws_.close(websocket::close_reason(websocket::close_code::policy_error, "Rate limit exceeded"), ec);
-                return;
-            }
-            rate_limit_start_ = now;
-            bytes_received_in_window_ = 0;
         }
 
         if (data.size() < sizeof(float)) {
@@ -278,6 +257,27 @@ private:
         if (data.size() % sizeof(float) != 0) {
             Log::warn("Binary frame size not aligned to float32 (" + std::to_string(data.size()) + " bytes), ignoring", session_id_);
             return;
+        }
+
+        // Enforce Binary Rate Limit (QoS) — only count frames that pass all validation guards.
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed_s = std::chrono::duration_cast<std::chrono::seconds>(now - rate_limit_start_).count();
+
+        bytes_received_in_window_ += data.size();
+
+        if (elapsed_s >= 3) {
+            // Fixed 3-second window: max 600 KB per window (~200 KB/s average).
+            // Note: this is a fixed window, not sliding — resets every 3 seconds.
+            const size_t MAX_BYTES_PER_WINDOW = 200 * 1024 * 3;
+            if (bytes_received_in_window_ > MAX_BYTES_PER_WINDOW) {
+                Log::warn("Rate limit exceeded (" + std::to_string(bytes_received_in_window_) +
+                          " bytes in " + std::to_string(elapsed_s) + "s)", session_id_);
+                boost::system::error_code ec;
+                ws_.close(websocket::close_reason(websocket::close_code::policy_error, "Rate limit exceeded"), ec);
+                return;
+            }
+            rate_limit_start_ = now;
+            bytes_received_in_window_ = 0;
         }
 
         try {
