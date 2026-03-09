@@ -50,12 +50,18 @@ cd third_party/whisper.cpp/models
 # Minimal — no auth, no TLS
 ./build/transcription_server --model third_party/whisper.cpp/models/ggml-small.bin
 
-# With auth token and TLS
+# With static auth token and TLS
 ./build/transcription_server \
   --model /path/to/ggml-small.bin \
   --bind 0.0.0.0 --port 9001 \
   --auth-token YOUR_TOKEN \
   --cert server.crt --key server.key
+
+# With external auth API (validates tokens against your own backend)
+./build/transcription_server \
+  --model /path/to/ggml-small.bin \
+  --auth-api-url http://auth-service:8080/validate \
+  --auth-api-secret API_SECRET
 
 # Generate self-signed certs for development
 ./generate_certs.sh
@@ -92,8 +98,8 @@ Model files must be placed in `./models/` before starting (mounted at `/app/mode
 | `--port N` | `9001` | TCP port |
 | `--cert FILE` | — | TLS certificate (enables WSS) |
 | `--key FILE` | — | TLS private key |
-| `--auth-token TOKEN` | — | Static auth token (disables if omitted) |
-| `--auth-api-url URL` | — | External auth API (POST, Bearer token) |
+| `--auth-token TOKEN` | — | Static token — constant-time comparison, no external API needed |
+| `--auth-api-url URL` | — | External auth API (takes precedence over `--auth-token`) |
 | `--auth-api-secret SECRET` | — | Bearer secret for the auth API |
 | `--auth-cache-ttl N` | `300` | Auth result cache TTL in seconds |
 | `--auth-api-timeout N` | `5` | Auth API request timeout in seconds |
