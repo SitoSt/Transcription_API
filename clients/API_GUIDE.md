@@ -64,6 +64,8 @@ Debe ser el **primer mensaje** de la sesión. El servidor no aceptará audio has
 | `type` | string | sí | Siempre `"config"` |
 | `language` | string | no | Código de idioma ISO 639-1. Default: `"es"`. Usar `"auto"` para detección automática |
 | `token` | string | si el servidor tiene auth activado | Token de autenticación |
+| `publish_mqtt` | boolean | no | Publicar transcripción final en MQTT. Default: `false` |
+| `vad_thold` | number | no | Umbral VAD `[0.0–1.0]`. `0.0` desactiva VAD. Default: `0.0` |
 
 **Idiomas soportados** (selección): `"es"`, `"en"`, `"fr"`, `"de"`, `"it"`, `"pt"`, `"zh"`, `"ja"`, `"ko"`, `"ru"`, `"auto"` (cualquier código soportado por Whisper).
 
@@ -83,9 +85,9 @@ Después de recibir `ready`, enviar los datos de audio como **frames WebSocket b
 
 **Tamaño de chunk recomendado:** 100–500 ms de audio (1.600–8.000 muestras = 6.400–32.000 bytes).
 
-El servidor acumula audio en un buffer circular de máximo **30 segundos**. El audio más antiguo se descarta automáticamente si se supera ese límite.
+El servidor acumula audio en un buffer de máximo **30 segundos**. Existe un nivel de alerta (**high-water mark**) a los **20 segundos**: si el buffer supera ese punto el servidor descarta los nuevos chunks entrantes y envía un mensaje `warning` con `code: "buffer_full"` (una sola vez, hasta que el buffer baje del HWM). El audio más antiguo se descarta automáticamente si se supera el máximo absoluto de 30 segundos.
 
-Las transcripciones parciales se generan automáticamente **cada vez que llega al menos 1 segundo de audio nuevo** acumulado.
+Las transcripciones parciales se generan automáticamente **cada vez que llega al menos 250 ms de audio nuevo** acumulado (mínimo 2 segundos de buffer para la primera inferencia).
 
 **Conversión desde int16 (PCM estándar):**
 ```python
@@ -154,6 +156,22 @@ Respuesta al mensaje `config` cuando todo es correcto.
 | `is_final` | bool | `false` = parcial (seguirá llegando más audio). `true` = resultado definitivo tras recibir `end` |
 
 El texto de las transcripciones parciales **incluye todo el audio procesado hasta ese momento**, no solo el chunk más reciente.
+
+---
+
+### `warning` — Aviso no fatal
+
+```json
+{
+  "type": "warning",
+  "code": "buffer_full",
+  "message": "Audio buffer full, dropping incoming audio"
+}
+```
+
+| `code` | Cuándo ocurre |
+|---|---|
+| `buffer_full` | El buffer de audio supera los 20 segundos (HWM). Los chunks entrantes se descartan hasta que el buffer se vacíe. Se envía una sola vez por episodio de saturación. |
 
 ---
 

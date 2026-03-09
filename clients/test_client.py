@@ -68,18 +68,19 @@ class TranscriptionClient:
         )
         print("✓ Conectado")
     
-    async def configure(self, language="es", energy_threshold=0.02, min_silence_frames=20, token=None):
+    async def configure(self, language="es", token=None, vad_thold=0.0):
         """Enviar configuración inicial"""
         config_msg = {
             "type": "config",
             "language": language,
-            "energy_threshold": energy_threshold,
-            "min_silence_frames": min_silence_frames
         }
-        
+
         if token:
             config_msg["token"] = token
-        
+
+        if vad_thold > 0.0:
+            config_msg["vad_thold"] = vad_thold
+
         print(f"⚙️  Enviando configuración: {config_msg}")
         await self.ws.send(json.dumps(config_msg))
         
@@ -236,13 +237,9 @@ class TranscriptionClient:
                 marker = "🔴" if is_final else "⚪"
                 print(f"{marker} {text}")
             
-            elif msg_type == "vad_state":
-                is_speech = msg.get("is_speech", False)
-                # energy = msg.get("energy", 0.0)
-                # state = "🎤" if is_speech else "🔇"
-                # print(f"{state}", end="\r", flush=True) 
-                pass # Reducir ruido en consola
-            
+            elif msg_type == "warning":
+                print(f"⚠️  Servidor: [{msg.get('code')}] {msg.get('message')}")
+
             elif msg_type == "error":
                 print(f"❌ Error servidor: {msg.get('message')}")
             
