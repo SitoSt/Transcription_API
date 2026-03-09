@@ -69,3 +69,26 @@ TEST_F(InferenceLimiterTest, MetricsContainExpectedKeys) {
     EXPECT_NE(m.find("transcription_active_inferences"), std::string::npos);
     EXPECT_NE(m.find("transcription_max_inferences"), std::string::npos);
 }
+
+TEST_F(InferenceLimiterTest, TryAcquireSucceedsWhenSlotFree) {
+    bool acquired = InferenceLimiter::instance().try_acquire();
+    EXPECT_TRUE(acquired);
+    if (acquired) InferenceLimiter::instance().release();
+}
+
+TEST_F(InferenceLimiterTest, TryAcquireFailsWhenAtLimit) {
+    InferenceLimiter::instance().setMaxConcurrency(1);
+    InferenceLimiter::Guard g; // occupy the single slot
+    EXPECT_FALSE(InferenceLimiter::instance().try_acquire());
+}
+
+TEST_F(InferenceLimiterTest, TryAcquireSucceedsAfterRelease) {
+    InferenceLimiter::instance().setMaxConcurrency(1);
+    {
+        InferenceLimiter::Guard g; // occupy
+        EXPECT_FALSE(InferenceLimiter::instance().try_acquire());
+    } // g released
+    bool acquired = InferenceLimiter::instance().try_acquire();
+    EXPECT_TRUE(acquired);
+    if (acquired) InferenceLimiter::instance().release();
+}

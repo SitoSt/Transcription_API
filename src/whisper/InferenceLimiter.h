@@ -38,6 +38,19 @@ public:
     }
 
     /**
+     * @brief Try to acquire an inference slot without blocking.
+     * @return true if a slot was acquired, false if all slots are taken.
+     */
+    bool try_acquire() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (active_count_ < max_concurrent_) {
+            ++active_count_;
+            return true;
+        }
+        return false;
+    }
+
+    /**
      * @brief Release an inference slot, waking up one waiting thread.
      */
     void release() {
