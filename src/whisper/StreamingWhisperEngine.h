@@ -33,10 +33,11 @@ public:
     StreamingWhisperEngine& operator=(const StreamingWhisperEngine&) = delete;
     
     /**
-     * @brief Agregar chunk de audio al buffer
+     * @brief Agregar chunk de audio al buffer.
      * @param pcm_data Audio en formato PCM float32, rango [-1.0, 1.0], 16kHz mono
+     * @return true if the chunk was dropped because the buffer is at the 20s high-water mark.
      */
-    void processAudioChunk(const std::vector<float>& pcm_data);
+    bool processAudioChunk(const std::vector<float>& pcm_data);
     
     
     struct TranscribeResult {

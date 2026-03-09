@@ -45,19 +45,26 @@ StreamingWhisperEngine::~StreamingWhisperEngine() {
     // ctx_ is NOT freed here — owned by ModelCache
 }
 
-void StreamingWhisperEngine::processAudioChunk(const std::vector<float>& pcm_data) {
+bool StreamingWhisperEngine::processAudioChunk(const std::vector<float>& pcm_data) {
     std::lock_guard<std::mutex> lock(buffer_mutex_);
-    
+
+    // High-water mark: 20s = 320 000 samples. Drop incoming chunk if buffer is already full.
+    // The hard cap (30s) is still enforced below for the overflow path; HWM provides early warning.
+    constexpr size_t HIGH_WATER_MARK = 16000 * 20;
+    if (audio_buffer_.size() >= HIGH_WATER_MARK) {
+        return true; // chunk dropped — caller should warn the client
+    }
+
     std::vector<float> prepped_data = pcm_data;
     AudioPreprocessor::process(prepped_data, hp_prev_raw_, hp_prev_filtered_);
 
     size_t new_total_size = audio_buffer_.size() + prepped_data.size();
-    
+
     if (new_total_size > static_cast<size_t>(max_buffer_samples_)) {
         if (prepped_data.size() >= static_cast<size_t>(max_buffer_samples_)) {
             audio_buffer_.clear();
-            audio_buffer_.insert(audio_buffer_.end(), 
-                               prepped_data.end() - max_buffer_samples_, 
+            audio_buffer_.insert(audio_buffer_.end(),
+                               prepped_data.end() - max_buffer_samples_,
                                prepped_data.end());
         } else {
             size_t to_discard = new_total_size - max_buffer_samples_;
@@ -67,6 +74,7 @@ void StreamingWhisperEngine::processAudioChunk(const std::vector<float>& pcm_dat
     } else {
         audio_buffer_.insert(audio_buffer_.end(), prepped_data.begin(), prepped_data.end());
     }
+    return false;
 }
 
 StreamingWhisperEngine::TranscribeResult StreamingWhisperEngine::transcribeSlidingWindow(bool force_commit) {

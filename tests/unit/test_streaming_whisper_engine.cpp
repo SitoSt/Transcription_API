@@ -175,3 +175,35 @@ TEST_F(StreamingWhisperEngineTest, ConcurrentProcessAudioChunkDoesNotCrash) {
     for (auto& th : threads) th.join();
     EXPECT_EQ(engine.getBufferSize(), static_cast<size_t>(n_threads * 10 * 160));
 }
+
+// ─── High-water mark ─────────────────────────────────────────────────────────
+
+TEST_F(StreamingWhisperEngineTest, ProcessAudioChunkReturnsFalseWhenBelowHWM) {
+    StreamingWhisperEngine engine(ctx_);
+    std::vector<float> chunk(1600, 0.0f); // 100ms
+    bool overflow = engine.processAudioChunk(chunk);
+    EXPECT_FALSE(overflow);
+}
+
+TEST_F(StreamingWhisperEngineTest, ProcessAudioChunkReturnsTrueWhenBufferAtHWM) {
+    StreamingWhisperEngine engine(ctx_);
+    // Fill exactly to HWM: 20s = 320000 samples
+    constexpr size_t HWM = 16000 * 20;
+    std::vector<float> fill(HWM, 0.0f);
+    engine.processAudioChunk(fill);
+    // Buffer is at HWM — next chunk must overflow
+    std::vector<float> extra(1600, 0.0f);
+    bool overflow = engine.processAudioChunk(extra);
+    EXPECT_TRUE(overflow);
+}
+
+TEST_F(StreamingWhisperEngineTest, ProcessAudioChunkReturnsFalseAfterReset) {
+    StreamingWhisperEngine engine(ctx_);
+    constexpr size_t HWM = 16000 * 20;
+    std::vector<float> fill(HWM, 0.0f);
+    engine.processAudioChunk(fill);
+    engine.reset(); // drain buffer
+    std::vector<float> extra(1600, 0.0f);
+    bool overflow = engine.processAudioChunk(extra);
+    EXPECT_FALSE(overflow); // buffer cleared, no overflow
+}

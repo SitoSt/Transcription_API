@@ -52,6 +52,7 @@ public:
           auth_manager_(auth_manager),
           mqtt_publisher_(mqtt_publisher),
           configured_(false),
+          buffer_overflowed_(false),
           last_transcribed_size_(0),
           language_("es"),
           publish_mqtt_(false),
@@ -190,11 +191,24 @@ private:
     }
 
     void processAudioChunk(const std::vector<float>& audio) {
-        std::lock_guard<std::mutex> lock(state_mutex_);
+        std::unique_lock<std::mutex> lock(state_mutex_);
         if (!configured_ || !engine_) return;
 
         last_audio_time_ = std::chrono::steady_clock::now();
-        engine_->processAudioChunk(audio);
+        bool overflow = engine_->processAudioChunk(audio);
+        bool should_warn = overflow && !buffer_overflowed_;
+        buffer_overflowed_ = overflow;
+        lock.unlock();
+
+        if (should_warn) {
+            Log::warn("Audio buffer full, dropping incoming audio", session_id_);
+            json warning = {
+                {"type", "warning"},
+                {"code", "buffer_full"},
+                {"message", "Audio buffer full, dropping incoming audio"}
+            };
+            sendMessage(warning);
+        }
         // Inference is handled entirely by flushLoop to avoid blocking the receive loop.
     }
 
@@ -435,6 +449,7 @@ private:
     std::unique_ptr<StreamingWhisperEngine> engine_;
     std::string session_id_;
     bool configured_;
+    bool buffer_overflowed_; // true while engine buffer is above 20s HWM
     size_t last_transcribed_size_;
     std::string language_;
 
