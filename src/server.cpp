@@ -88,6 +88,9 @@ ServerConfig configFromEnv() {
     if (auto v = env("PORT"); !v.empty())
         cfg.port = static_cast<unsigned short>(std::stoul(v));
 
+    if (auto v = env("AUTH_TOKEN"); !v.empty())
+        cfg.auth_token = v;
+
     if (auto v = env("AUTH_API_URL"); !v.empty())
         cfg.auth_api_url = v;
 
@@ -163,6 +166,7 @@ ServerConfig configFromEnv() {
 void printUsage(const char* binary) {
     std::cout << "Usage: " << binary
               << " [--model path] [--bind address] [--port N]"
+              << " [--auth-token TOKEN]"
               << " [--auth-api-url URL] [--auth-api-secret SECRET]"
               << " [--auth-cache-ttl N] [--auth-api-timeout N]"
               << " [--cert cert.pem] [--key key.pem]"
@@ -174,7 +178,7 @@ void printUsage(const char* binary) {
               << " [--env-file path]" << std::endl;
     std::cout << "All options can also be set via environment variables (or a .env file):" << std::endl;
     std::cout << "  MODEL_PATH, BIND_ADDRESS, PORT," << std::endl;
-    std::cout << "  AUTH_API_URL, AUTH_API_SECRET, AUTH_CACHE_TTL, AUTH_API_TIMEOUT," << std::endl;
+    std::cout << "  AUTH_TOKEN, AUTH_API_URL, AUTH_API_SECRET, AUTH_CACHE_TTL, AUTH_API_TIMEOUT," << std::endl;
     std::cout << "  TLS_CERT, TLS_KEY, MAX_CONNECTIONS, MAX_CONNECTIONS_PER_IP," << std::endl;
     std::cout << "  MQTT_URL, MQTT_TOPIC, MQTT_CLIENT_ID," << std::endl;
     std::cout << "  WHISPER_BEAM_SIZE, WHISPER_THREADS, MAX_CONCURRENT_INFERENCE," << std::endl;
@@ -211,6 +215,8 @@ ServerConfig parseArgs(int argc, char* argv[]) {
             config.bind_address = argv[++i];
         } else if (arg == "--port" && i + 1 < argc) {
             config.port = static_cast<unsigned short>(std::stoul(argv[++i]));
+        } else if (arg == "--auth-token" && i + 1 < argc) {
+            config.auth_token = argv[++i];
         } else if (arg == "--auth-api-url" && i + 1 < argc) {
             config.auth_api_url = argv[++i];
         } else if (arg == "--auth-api-secret" && i + 1 < argc) {
@@ -441,6 +447,7 @@ int main(int argc, char* argv[]) {
         );
 
         ApiAuthConfig auth_config;
+        auth_config.static_token      = config.auth_token;
         auth_config.api_base_url      = config.auth_api_url;
         auth_config.api_secret_key    = config.auth_api_secret;
         auth_config.cache_ttl_seconds = config.auth_cache_ttl;

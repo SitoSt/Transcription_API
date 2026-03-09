@@ -11,8 +11,9 @@ struct ServerConfig {
     size_t max_connections_per_ip = 2;
     int session_timeout_sec = 30;       // seconds before disconnecting idle sessions
 
-    // Auth API
-    std::string auth_api_url;           // empty = auth disabled
+    // Auth
+    std::string auth_token;             // static token (simple deployments, no API needed)
+    std::string auth_api_url;           // external auth API (takes precedence over auth_token)
     std::string auth_api_secret;        // Authorization: Bearer <...>
     int auth_cache_ttl = 300;           // seconds
     int auth_api_timeout = 5;           // seconds

@@ -17,4 +17,8 @@ private:
     AuthCache cache_;
     bool auth_enabled_;
     int cache_ttl_seconds_;
+    std::string static_token_; // non-empty = static token mode (no API call)
+
+    // Constant-time comparison to resist timing attacks.
+    static bool constantTimeEqual(const std::string& a, const std::string& b);
 };

@@ -6,4 +6,6 @@ struct ApiAuthConfig {
     std::string api_secret_key;     // Authorization: Bearer <...>
     int timeout_seconds = 5;
     int cache_ttl_seconds = 300;
+
+    std::string static_token;       // Simple static token (used when api_base_url is empty)
 };
