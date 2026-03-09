@@ -22,6 +22,7 @@
 #include "mqtt/TranscriptionEvent.h"
 #include "log/Log.h"
 #include "utils/HallucinationGuard.h"
+#include "whisper/InferenceLimiter.h"
 
 namespace beast = boost::beast;
 namespace websocket = beast::websocket;
@@ -495,7 +496,13 @@ private:
 
             Log::debug("flushLoop inference: new=" + std::to_string(current_size - last_transcribed_size_) +
                        " silence_ms=" + std::to_string(elapsed_ms), session_id_);
+            // Non-blocking inference: skip cycle if GPU is saturated.
+            if (!InferenceLimiter::instance().try_acquire()) {
+                Log::debug("flushLoop: GPU busy, skipping inference cycle", session_id_);
+                continue;
+            }
             auto res = engine_->transcribeSlidingWindow(false);
+            InferenceLimiter::instance().release();
 
             // Hallucination guard: filter loops before updating state or sending to client.
             bool committed_ok = !res.committed_text.empty() && !isHallucination(res.committed_text);

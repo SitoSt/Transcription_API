@@ -123,15 +123,11 @@ StreamingWhisperEngine::TranscribeResult StreamingWhisperEngine::transcribeSlidi
         params.initial_prompt = initial_prompt_.c_str();
     }
 
-    int result = -1;
-    {
-        InferenceLimiter::Guard limit_guard;
-        result = whisper_full_with_state(
-            ctx_, state_, params,
-            audio_buffer_.data(),
-            audio_buffer_.size()
-        );
-    }
+    int result = whisper_full_with_state(
+        ctx_, state_, params,
+        audio_buffer_.data(),
+        audio_buffer_.size()
+    );
     
     if (result != 0) {
         std::cerr << "[StreamingWhisperEngine] ERROR: Whisper result=" << result << std::endl;
@@ -220,7 +216,8 @@ StreamingWhisperEngine::TranscribeResult StreamingWhisperEngine::transcribeSlidi
 }
 
 std::string StreamingWhisperEngine::transcribe(size_t start_offset) {
-    // Legacy mapping (ignores start_offset which is no longer used outside of testing)
+    // Legacy mapping — uses blocking Guard for direct callers (e.g. tests).
+    InferenceLimiter::Guard limit_guard;
     return transcribeSlidingWindow(true).committed_text;
 }
 
