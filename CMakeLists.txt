@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(transcription_service)
+project(jota-transcriber)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,9 +50,9 @@ if(BUILD_SERVER)
         message(STATUS "Mosquitto C++ found: ${MOSQUITTO_INCLUDE_DIR}")
     else()
         message(FATAL_ERROR "Mosquitto C++ not found. Install libmosquittopp-dev.")
-    endif()
+    endif(BUILD_SERVER)
 
-    add_executable(transcription_server
+    add_executable(jota-transcriber
         src/server.cpp
         src/server/StreamingSession.cpp
         src/server/AuthManager.cpp
@@ -63,12 +63,14 @@ if(BUILD_SERVER)
         src/auth/AuthCache.cpp
     )
 
-    target_include_directories(transcription_server PRIVATE
-        ${CMAKE_SOURCE_DIR}/src
-        ${MOSQUITTO_INCLUDE_DIRS}
+    target_include_directories(jota-transcriber PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/json/include
+        ${Boost_INCLUDE_DIRS}
     )
 
-    target_link_libraries(transcription_server PRIVATE
+    target_link_libraries(jota-transcriber PRIVATE
+        whisper
         Boost::boost
         pthread
         streaming_whisper

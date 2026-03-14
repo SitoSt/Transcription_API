@@ -49,7 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copia de binarios y utilidades
-COPY --from=builder /app/build/transcription_server /app/transcription_server
+COPY --from=builder /app/build/jota-transcriber /app/jota-transcriber
 COPY --from=builder /app/generate_certs.sh /app/generate_certs.sh
 
 RUN mkdir -p /app/models && chown -R appuser:appuser /app
@@ -57,4 +57,4 @@ USER appuser
 
 EXPOSE 8003
 
-CMD ["./transcription_server"]
+CMD ["./jota-transcriber"]

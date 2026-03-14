@@ -48,17 +48,21 @@ cd third_party/whisper.cpp/models
 
 ```bash
 # Minimal — no auth, no TLS
-./build/transcription_server --model third_party/whisper.cpp/models/ggml-small.bin
+./build/jota-transcriber --model third_party/whisper.cpp/models/ggml-small.bin
 
 # With static auth token and TLS
-./build/transcription_server \
+./build/jota-transcriber \
   --model /path/to/ggml-small.bin \
   --bind 0.0.0.0 --port 9001 \
   --auth-token YOUR_TOKEN \
-  --cert server.crt --key server.key
+  --cert server.crt --key server.key \
+  --max-connections 10 \
+  --max-connections-per-ip 2 \
+  --whisper-beam-size 5 \
+  --whisper-threads 4
 
 # With external auth API (validates tokens against your own backend)
-./build/transcription_server \
+./build/jota-transcriber \
   --model /path/to/ggml-small.bin \
   --auth-api-url http://auth-service:8080/validate \
   --auth-api-secret API_SECRET
