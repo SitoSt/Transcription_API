@@ -4,6 +4,7 @@ build/
 bin/
 models/
 *.wav
+venv/
 
 # SSL/TLS Certificates and Keys
 *.crt

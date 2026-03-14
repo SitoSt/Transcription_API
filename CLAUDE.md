@@ -36,20 +36,20 @@ Tests require a model file at `third_party/whisper.cpp/models/ggml-base.bin`.
 ## Running the Server
 
 ```bash
-# Minimal (no auth, no TLS)
-./build/transcription_server --model /path/to/ggml-base.bin
-
-# With auth and TLS
-./build/transcription_server \
-  --model /path/to/ggml-base.bin \
-  --bind 0.0.0.0 --port 9001 \
-  --auth-token YOUR_TOKEN \
-  --cert server.crt --key server.key \
-  --max-connections 8 --max-connections-per-ip 2
+# Run Server:
+./build/jota-transcriber --model /path/to/ggml-base.bin
+# Or with params:
+./build/jota-transcriber \
+    --model /path/to/ggml-base.bin \
+    --bind 0.0.0.0 --port 8003 \
+    --whisper-beam-size 5 --whisper-threads 4 \
+    --auth-token YOUR_TOKEN \
+    --cert server.crt --key server.key \
+    --max-connections 8 --max-connections-per-ip 2
+```
 
 # Generate self-signed certs
 ./generate_certs.sh
-```
 
 ## Docker
 

@@ -390,8 +390,8 @@ int main(int argc, char* argv[]) {
 
         ServerConfig config = parseArgs(argc, argv);
 
-        std::cout << "Streaming Transcription Server\n";
-        std::cout << "──────────────────────────────\n";
+        std::cout << "jota-transcriber" << std::endl;
+        std::cout << "────────────────" << std::endl;
 
         bool use_ssl    = !config.cert_path.empty() && !config.key_path.empty();
         bool auth_enabled = !config.auth_api_url.empty();

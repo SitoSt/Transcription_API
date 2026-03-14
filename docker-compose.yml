@@ -3,8 +3,8 @@ version: '3.8'
 services:
   server:
     build: .
-    image: transcription-server:latest
-    container_name: transcription_server
+    image: jota-transcriber:latest
+    container_name: jota-transcriber
     network_mode: host
     env_file:
       - .env
