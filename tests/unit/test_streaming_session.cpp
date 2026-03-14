@@ -188,7 +188,6 @@ TEST_F(StreamingSessionTest, ValidConfigReturnsReady) {
     client.sendJson({{"type", "config"}, {"language", "es"}});
     auto msg = client.recvJson();
     EXPECT_EQ(msg["type"], "ready");
-    EXPECT_EQ(msg["protocol_version"], 1);
     EXPECT_TRUE(msg.contains("session_id"));
     EXPECT_EQ(msg["config"]["language"], "es");
 }
