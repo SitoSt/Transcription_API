@@ -16,6 +16,13 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libboost-dev libssl-dev \
+            libmosquitto-dev libmosquittopp-dev
+
       - name: Configure (tests only, no server)
         run: |
           cmake -B build \
