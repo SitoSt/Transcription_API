@@ -14,18 +14,39 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY . .
 
-# Compilación con soporte CUDA
-# Stubs de CUDA driver necesarios para linkar libggml-cuda.so
+# Stubs de CUDA driver necesarios para linkar libggml-cuda
 ENV LIBRARY_PATH="/usr/local/cuda/lib64/stubs:${LIBRARY_PATH}"
+
+# ── Fase A: whisper.cpp + dependencias externas ────────────────────────────
+# Esta capa solo se invalida cuando cambia third_party/ o CMakeLists.txt.
+# Configura con BUILD_SERVER=ON para que FetchContent descargue nlohmann/json
+# aquí (cmake no verifica existencia de .cpp al configurar, solo al compilar).
+# Boost y OpenSSL ya están instalados arriba — los find_package pasan sin error.
+COPY third_party/ third_party/
+COPY CMakeLists.txt .
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_TESTS=OFF \
     -DBUILD_SERVER=ON \
-    -DGGML_CUDA=1 \
-    -DBUILD_SHARED_LIBS=OFF && \
-    cmake --build build -j$(nproc)
+    -DBUILD_TESTS=OFF \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DGGML_CUDA=1
+
+# Compila whisper + ggml (incluye kernels CUDA — la parte lenta).
+RUN cmake --build build --target whisper -j$(nproc)
+
+# ── Fase B: código del servidor ────────────────────────────────────────────
+# Solo se invalida cuando cambia src/ o generate_certs.sh.
+# cmake detecta que whisper/ggml ya están compilados y los omite.
+COPY src/ src/
+COPY generate_certs.sh .
+RUN cmake -B build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SERVER=ON \
+    -DBUILD_TESTS=OFF \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DGGML_CUDA=1
+RUN cmake --build build --target jota-transcriber -j$(nproc)
 
 # Runtime Stage
 FROM nvidia/cuda:12.3.1-runtime-ubuntu22.04 AS runtime
