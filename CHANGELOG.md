@@ -1,3 +1,55 @@
+# 1.0.0 (2026-03-15)
+
+
+### Bug Fixes
+
+* add 1MB max frame size guard + correct rate limit comment ([de611a6](https://github.com/Jota-project/jota-transcriber/commit/de611a6ad882eea03120ed16fe64aa6923735f15))
+* **buffer:** corregir desbordamiento de buffer y añadir tests ([83cd0cc](https://github.com/Jota-project/jota-transcriber/commit/83cd0cca00ea374e8a5b17c7604c188cf1b2ccfd))
+* correct audio frame minimum size check (float32, not WAV header) ([08f29b1](https://github.com/Jota-project/jota-transcriber/commit/08f29b1ba5e7d833f384bdcbea9b857ebba963b3))
+* correct client protocol docs and test client Ctrl+C handling ([5c402ca](https://github.com/Jota-project/jota-transcriber/commit/5c402caffcb427d886ae88dd4d46adfd10eb7677))
+* graceful shutdown with explicit thread join and configurable timeout ([25a9654](https://github.com/Jota-project/jota-transcriber/commit/25a9654973ba535fd74c0c47ce9f6d04f85a943c))
+* move rate limit accounting after frame validation guards ([a030c52](https://github.com/Jota-project/jota-transcriber/commit/a030c5251574888c19822171dfe125ef6a47372b))
+* remove stale nullptr mqtt_publisher from StreamingSession test ([9ab5081](https://github.com/Jota-project/jota-transcriber/commit/9ab50813e69c824a771aebc8f74d6f87014819ff))
+* reset buffer_overflowed_ in flushLoop when buffer drains below HWM ([e24b4d3](https://github.com/Jota-project/jota-transcriber/commit/e24b4d31116f39a37ea95b058edacb2d1a451997))
+* **tests:** remove protocol_version assertion from ValidConfigReturnsReady ([6249f50](https://github.com/Jota-project/jota-transcriber/commit/6249f504b9ea88ccc8856ac1c2ff7f35c9ce71d7))
+* **tests:** resolve nlohmann_json and mosquitto when BUILD_SERVER=OFF ([fc143a0](https://github.com/Jota-project/jota-transcriber/commit/fc143a0af1453c64d7da57a40f8afd22c8e16bd7))
+* update auth client, MQTT publisher, and Docker config ([b96e5db](https://github.com/Jota-project/jota-transcriber/commit/b96e5db85ce1b61d619091b67238c12bf5d66760))
+* watchdog covers ioc_thread join, handle emplace_back exception without re-throw ([cbd24c9](https://github.com/Jota-project/jota-transcriber/commit/cbd24c93d4d38a745f6860c34dedeb3b731e8429))
+* WebSocket handshake timeout bug ([90d516c](https://github.com/Jota-project/jota-transcriber/commit/90d516cad705a5cc8fd8c6dcf49ade23a5a6cdc1))
+
+
+### Features
+
+* add --auth-token for static local token authentication ([408e252](https://github.com/Jota-project/jota-transcriber/commit/408e2522fdbd41d3ac44969efd80828129366915))
+* add ModelCache and refactor engine for shared context ([67d9924](https://github.com/Jota-project/jota-transcriber/commit/67d992404192d2444c51dbbfa2d8ff253335bbf1))
+* add MQTT credentials and orchestrator integration guide ([c92169c](https://github.com/Jota-project/jota-transcriber/commit/c92169c40489cc4a18e4237f46a3c416580f1afe))
+* add protocol_version to ready message + raw transcription fallback ([7189ff1](https://github.com/Jota-project/jota-transcriber/commit/7189ff1b79fc582d8c550bc4dfd0849cc8e8230d))
+* add try_acquire() to InferenceLimiter for non-blocking inference ([aa60805](https://github.com/Jota-project/jota-transcriber/commit/aa608053774967a59e6989428da82d4335edac04))
+* Añadir soporte Docker y GPU en Whisper ([dce466a](https://github.com/Jota-project/jota-transcriber/commit/dce466afadc11ef322962282fe34db7c8541c4df))
+* async flush thread and write mutexes to fix dead silence ([62cadb4](https://github.com/Jota-project/jota-transcriber/commit/62cadb4387bb31aad62ed9c086ff5317cc97399a))
+* audio buffer HWM (20s) with JSON warning to client on overflow ([24b91d8](https://github.com/Jota-project/jota-transcriber/commit/24b91d8d3b97927eec74fbd8edd9ec98b7d428ce))
+* **auth:** add API-based authentication module ([f30b222](https://github.com/Jota-project/jota-transcriber/commit/f30b2221719b7250782056fc2453842bd5305883))
+* **clients:** añadir cliente de pruebas en Python ([206b867](https://github.com/Jota-project/jota-transcriber/commit/206b867a45ef9f2154ff008bd317bf7812d6408d))
+* **config:** add .env file loading and expanded CLI/env config ([5490bac](https://github.com/Jota-project/jota-transcriber/commit/5490bacb00631c5243c0e334b4c1478098a9dd38))
+* Enterprise grade enhancements (DevOps/SRE) ([c2bdbd4](https://github.com/Jota-project/jota-transcriber/commit/c2bdbd488a7689c9509ffd7d017d23a90af8965c))
+* handle idle timeouts, language caching, and telemetry endpoint ([7137dd5](https://github.com/Jota-project/jota-transcriber/commit/7137dd51eabdc0e6ff406d777a57388f9e4cb005))
+* implement global inference limiter and audio preprocessing ([f4fc205](https://github.com/Jota-project/jota-transcriber/commit/f4fc205211f5d7ba7c86eb10f739cd074b916a39))
+* implement sliding window and safe VAD for stable realtime performance ([d67f717](https://github.com/Jota-project/jota-transcriber/commit/d67f71739d225f80246c90e628494d713b0e8ba4))
+* Implementar StreamingWhisperEngine y SimpleVAD con tests completos ([4f20a15](https://github.com/Jota-project/jota-transcriber/commit/4f20a157bc1045f3447d6bc7fab3430acf278756))
+* integrate ModelCache into session/server + add config ([7183a1a](https://github.com/Jota-project/jota-transcriber/commit/7183a1a69757b0c7a17d684a5eee679765b18a23))
+* **mqtt:** add MQTT publisher module ([483194f](https://github.com/Jota-project/jota-transcriber/commit/483194ff991358c72b3855aa39ffd81a178e877b))
+* non-blocking inference in flushLoop using try_acquire ([89a032e](https://github.com/Jota-project/jota-transcriber/commit/89a032e3b894366c69def406c863c493a4a517bf))
+* **perf:** first stable real-time transcription with hallucination guards ([2945547](https://github.com/Jota-project/jota-transcriber/commit/294554778b474940fd967c8ee8ac6af9cb1873a4))
+* **perf:** semantic token sliding window and 250ms latency ([e23c624](https://github.com/Jota-project/jota-transcriber/commit/e23c6247a69590866b5b21066ebe063ae1ecec31))
+* rename project to jota-transcriber ([bd85ba8](https://github.com/Jota-project/jota-transcriber/commit/bd85ba8cdddc7780b3f1f4c3f0671480d9608aa5))
+* switch default model to ggml-small.bin for faster realtime performance ([835f6cd](https://github.com/Jota-project/jota-transcriber/commit/835f6cd9809e72f5ca451fcea2b3a7f116d44225))
+* tune audio normalization, add whisper advanced parameters and logging ([74e04de](https://github.com/Jota-project/jota-transcriber/commit/74e04de6fcb2709ac80db6d2f3145609cfba1b6a))
+
+
+### Performance Improvements
+
+* Docker layer cache para whisper.cpp/CUDA ([#19](https://github.com/Jota-project/jota-transcriber/issues/19)) ([0afd7e8](https://github.com/Jota-project/jota-transcriber/commit/0afd7e84790bec845ac12b105bfa91913b9a13c7))
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
